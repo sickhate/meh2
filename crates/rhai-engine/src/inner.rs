@@ -113,6 +113,30 @@ impl RhaiEngine {
             if content.is_empty() { default.to_string() } else { content }
         });
 
+        // json_decode(json_str) → Dynamic — parse a JSON string into a Rhai value.
+        // Objects become maps (#{...}), arrays become arrays, primitives their
+        // Rhai equivalents. Returns an empty map on parse error (error is logged).
+        engine.register_fn("json_decode", |json: &str| -> rhai::Dynamic {
+            match rhai::Engine::new().parse_json(json, true) {
+                Ok(map) => rhai::Dynamic::from_map(map),
+                Err(e)  => {
+                    tracing::warn!("rhai json_decode: {e}");
+                    rhai::Dynamic::from_map(rhai::Map::new())
+                }
+            }
+        });
+
+        // json_encode(value) → string — serialise a Rhai value to a JSON string.
+        // Useful for caching complex objects via write_cache().
+        // Returns "{}" on error.
+        engine.register_fn("json_encode", |val: rhai::Dynamic| -> String {
+            let json_val = rhai_dynamic_to_json(&val);
+            match serde_json::to_string(&json_val) {
+                Ok(s)  => s,
+                Err(e) => { tracing::warn!("rhai json_encode: {e}"); "{}".to_string() }
+            }
+        });
+
         // write_cache(key, value) → bool — writes value to ~/.cache/meh2/<key>.
         // Key is restricted to [a-zA-Z0-9_-] to prevent path traversal.
         // Returns true on success, false on error (error is logged).
@@ -339,5 +363,33 @@ fn dynamic_to_string(v: Dynamic) -> String {
         "bool"    => v.cast::<bool>().to_string(),
         "()"      => String::new(),
         _         => v.to_string(),
+    }
+}
+
+/// Recursively convert a Rhai `Dynamic` to a `serde_json::Value` for `json_encode`.
+fn rhai_dynamic_to_json(d: &Dynamic) -> serde_json::Value {
+    if d.is::<rhai::Map>() {
+        let map = d.clone().cast::<rhai::Map>();
+        let obj: serde_json::Map<String, serde_json::Value> = map
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), rhai_dynamic_to_json(&v)))
+            .collect();
+        serde_json::Value::Object(obj)
+    } else if d.is::<rhai::Array>() {
+        let arr = d.clone().cast::<rhai::Array>();
+        serde_json::Value::Array(arr.iter().map(rhai_dynamic_to_json).collect())
+    } else if d.is::<String>() {
+        serde_json::Value::String(d.clone().cast::<String>())
+    } else if d.is::<i64>() {
+        serde_json::Value::Number(d.clone().cast::<i64>().into())
+    } else if d.is::<f64>() {
+        let f = d.clone().cast::<f64>();
+        serde_json::Number::from_f64(f)
+            .map(serde_json::Value::Number)
+            .unwrap_or(serde_json::Value::Null)
+    } else if d.is::<bool>() {
+        serde_json::Value::Bool(d.clone().cast::<bool>())
+    } else {
+        serde_json::Value::Null
     }
 }

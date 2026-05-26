@@ -1974,6 +1974,7 @@ dependencies = [
  "anyhow",
  "once_cell",
  "rhai",
+ "serde_json",
  "tracing",
 ]
 

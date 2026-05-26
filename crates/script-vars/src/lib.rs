@@ -336,8 +336,25 @@ async fn run_subscribe_file(
                     None         => break,
                 };
 
-                if !matches!(evt.kind, EventKind::Modify(_) | EventKind::Create(_)) {
-                    continue;
+                match evt.kind {
+                    // File was removed (or renamed away) while we were watching it directly.
+                    // Transition back to parent-dir watch so we catch when it reappears.
+                    EventKind::Remove(_) if state == WatchState::File => {
+                        let _ = watcher.unwatch(&path);
+                        if let Err(e) = watch_parent_dir(&mut watcher, &path) {
+                            tracing::warn!("subscribe `{}`: lost file, can't watch parent: {e}", def.name);
+                        } else {
+                            state = WatchState::Parent;
+                            tracing::debug!("subscribe `{}`: file removed, watching parent", def.name);
+                        }
+                        continue;
+                    }
+
+                    // File created or modified — proceed to emit.
+                    EventKind::Modify(_) | EventKind::Create(_) => {}
+
+                    // Anything else (access, metadata, etc.) — ignore.
+                    _ => continue,
                 }
 
                 // While watching the parent dir, check if our file just appeared.

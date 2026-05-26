@@ -44,8 +44,8 @@ fn greeting() #{
 
 // Dynamic widget: changes structure based on a condition.
 fn battery_widget() {
-    let cap_raw = run_shell("cat /sys/class/power_supply/BAT0/capacity 2>/dev/null");
-    let status   = run_shell("cat /sys/class/power_supply/BAT0/status 2>/dev/null");
+    let cap_raw = read_file("/sys/class/power_supply/BAT0/capacity");
+    let status   = read_file("/sys/class/power_supply/BAT0/status");
 
     if cap_raw == "" {
         return #{

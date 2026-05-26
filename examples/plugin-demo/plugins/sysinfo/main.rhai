@@ -1,7 +1,11 @@
-// sysinfo plugin — CPU usage and RAM stats from /proc.
+// sysinfo plugin — CPU usage and RAM stats from /proc, plus a sysinfo-pill widget.
 //
-// Each fn get_<VARNAME>() is called by the plugin host on every poll tick.
-// Return a string; it becomes the value of the declared var in yuck.
+// Exported vars:   get_PLUGIN_CPU(), get_PLUGIN_RAM() — called on each poll tick.
+// Exported widget: render_sysinfo_pill()               — called when watched vars change.
+//
+// Plugin-registered widget usage in yuck:
+//   (sysinfo-pill)                        ; watches PLUGIN_CPU + PLUGIN_RAM (default)
+//   (sysinfo-pill :watch "PLUGIN_CPU")    ; rebuild on CPU changes only
 
 // ── State for CPU delta ───────────────────────────────────────────────────────
 
@@ -86,4 +90,43 @@ fn get_PLUGIN_RAM() {
     }
     let used_mb = (total - avail) / 1024;
     used_mb + " MB"
+}
+
+// ── Widget: sysinfo-pill ──────────────────────────────────────────────────────
+//
+// Returns a map-based widget tree. PLUGIN_CPU and PLUGIN_RAM are in scope
+// because they are listed in [[widgets]] default_watch; the daemon injects
+// their current values before calling this function.
+//
+// The caller can pass :watch to override which vars trigger a rebuild:
+//   (sysinfo-pill :watch "PLUGIN_CPU PLUGIN_RAM")  ; default
+//   (sysinfo-pill :watch "PLUGIN_CPU")             ; RAM changes won't rebuild
+
+fn render_sysinfo_pill() {
+    let cpu_class = if parse_int(PLUGIN_CPU) >= 80 { "sysinfo-cpu high" } else { "sysinfo-cpu" };
+
+    #{
+        type:         "box",
+        class:        "sysinfo-pill",
+        orientation:  "h",
+        spacing:      "4",
+        "space-evenly": "false",
+        children: [
+            #{
+                type:  "label",
+                class: cpu_class,
+                text:  " " + PLUGIN_CPU,
+            },
+            #{
+                type:  "label",
+                class: "sysinfo-sep",
+                text:  "│",
+            },
+            #{
+                type:  "label",
+                class: "sysinfo-ram",
+                text:  " " + PLUGIN_RAM,
+            },
+        ]
+    }
 }

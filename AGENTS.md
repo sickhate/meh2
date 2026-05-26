@@ -22,13 +22,15 @@
 
 ### Rhai API surface (crates/rhai-engine/src/inner.rs)
 - `read_file(path)` → string (silent empty on NotFound, warn on other errors)
+- `read_or(path, default)` → string (like `read_file` but returns `default` if the file is missing or empty)
 - `write_cache(key, value)` → bool (writes to `~/.cache/meh2/<key>`; key must be `[a-zA-Z0-9_-]`)
 - `run_shell(cmd)` → string (stdout, logged)
 - `parse_int(s)` → i64
 - `parse_float(s)` → f64
 - `env_var(name)` → string
 - `path_exists(path)` → bool
-- `read_or(path, default)` → string (like `read_file` but returns `default` if the file is missing or empty)
+- `json_decode(json_str)` → Dynamic (parse JSON → Rhai map/array/value; empty map on error)
+- `json_encode(value)` → string (serialise any Rhai value back to JSON; useful with write_cache)
 
 ### Known Rhai gotchas (IMPORTANT — read before writing scripts)
 - `string.trim()` and `string.replace(from, to)` are **in-place** in Rhai — they modify the string and return `()`, NOT the trimmed/replaced value. Never do `let x = str.trim()`.
