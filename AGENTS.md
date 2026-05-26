@@ -33,6 +33,7 @@
 - To parse `/proc` files: use `split(" ")` + `parse_int(tok)` to find the first positive integer. Do NOT use `replace()`.
 - String concatenation: use `+` operator. Template strings `` `${var}` `` work in `.rhai` files but NOT inside yuck strings (yuck parser intercepts `${}`).
 - Inline `rhai:` in yuck: use `+` for path building (`h + "/.local/share/..."`) not template strings.
+- For CPU delta sampling: use `write_cache` to persist previous tick's values between calls instead of `run_shell("sleep 0.2")`. Sleep in spawn_blocking wastes a thread for 200ms every tick. See `getSysStats.rhai`.
 
 Feature flag: `rhai` (in `default` and `full` profiles; excluded from `minimal`).
 New crate: `crates/rhai-engine/`. Example: `examples/rhai-bar/`.
