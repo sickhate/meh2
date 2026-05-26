@@ -1,0 +1,247 @@
+; Widget test — exercises every implemented widget type end-to-end.
+; Launch: meh daemon && meh open widget-test
+;
+; Each section renders one widget family. Reactive sections update live.
+; Interactive sections (revealer, stack) use `meh update` via button onclick.
+
+; ── Script vars ───────────────────────────────────────────────────────────────
+
+(defpoll TICK     :interval "1s"  "date '+%H:%M:%S'")
+(defpoll COUNTER  :interval "2s"  "echo $((RANDOM % 100))")
+
+; Subscribe vars: inotify file watch
+(defsubscribe BAT_CAP :file "/sys/class/power_supply/BAT0/capacity" :initial "?")
+
+; Subscribe vars: DBus property (UPower battery percentage, system bus)
+; Uncomment if running with dbus-vars feature and UPower available:
+; (defsubscribe UPOWER_BAT
+;   :dbus-bus "system"
+;   :dbus-service "org.freedesktop.UPower"
+;   :dbus-object  "/org/freedesktop/UPower/devices/battery_BAT0"
+;   :dbus-iface   "org.freedesktop.UPower.Device"
+;   :dbus-prop    "Percentage"
+;   :initial "0")
+
+; ── State vars ────────────────────────────────────────────────────────────────
+
+(defvar REVEALED   "true")
+(defvar STACK_PAGE "page-a")
+
+; ── Main panel ────────────────────────────────────────────────────────────────
+
+(defwidget widget-test []
+    (scroll :vscroll true :hscroll false
+        (box :orientation "v" :spacing 12 :class "container"
+            (box :class "close-bar" :halign "end"
+                (button :label "✕ Close"
+                        :class "close-btn"
+                        :onclick "meh --config ~/Projects/meh/examples/widget-test close widget-test"))
+
+            ; ── label ─────────────────────────────────────────────────────────
+            (box :orientation "v" :spacing 6 :class "section"
+                (label :class "section-title" :text "label" :halign "start")
+                (label :text "Plain text")
+                (label :text "<b>Bold</b> and <i>italic</i>" :use-markup true)
+                (label :text "Reactive: ${TICK}" :class "clock")
+                (label :text "Truncated — this line is intentionally very long and will be cut"
+                       :limit-width 30)
+                (label :text "Wrapped text that will span multiple lines when it exceeds the widget width limit set here"
+                       :wrap true :width 240 :justify "left"))
+
+            ; ── button ────────────────────────────────────────────────────────
+            (box :orientation "v" :spacing 6 :class "section"
+                (label :class "section-title" :text "button" :halign "start")
+                (box :spacing 8
+                    (button :label "Plain"
+                            :onclick "notify-send 'meh widget-test' 'button clicked'")
+                    (button :onclick "notify-send 'meh widget-test' 'icon button'"
+                        (box :spacing 4
+                            (label :text "󰈀")
+                            (label :text "With child")))
+                    (button :label "Scroll↕"
+                            :onscroll "notify-send 'meh widget-test' 'scrolled {}'")
+                    (button :label "Right-click"
+                            :onrightclick "notify-send 'meh widget-test' 'right-clicked'")))
+
+            ; ── box ───────────────────────────────────────────────────────────
+            (box :orientation "v" :spacing 6 :class "section"
+                (label :class "section-title" :text "box" :halign "start")
+                (box :orientation "h" :spacing 8 :class "demo-row"
+                    (label :text "H-start")
+                    (label :text "H-center")
+                    (label :text "H-end"))
+                (box :orientation "h" :spacing 0 :space-evenly true :class "demo-row"
+                    (label :text "Even")
+                    (label :text "Even")
+                    (label :text "Even"))
+                (box :orientation "v" :spacing 2 :class "demo-col"
+                    (label :text "V-top")
+                    (label :text "V-bottom")))
+
+            ; ── centerbox ─────────────────────────────────────────────────────
+            (box :orientation "v" :spacing 6 :class "section"
+                (label :class "section-title" :text "centerbox" :halign "start")
+                (centerbox :orientation "h" :class "demo-row"
+                    (label :text "⟵ start")
+                    (label :text "center")
+                    (label :text "end ⟶")))
+
+            ; ── eventbox ──────────────────────────────────────────────────────
+            (box :orientation "v" :spacing 6 :class "section"
+                (label :class "section-title" :text "eventbox" :halign "start")
+                (eventbox
+                    :onclick      "notify-send 'meh widget-test' 'eventbox clicked'"
+                    :onhover      "notify-send 'meh widget-test' 'hover enter'"
+                    :onhoverlost  "notify-send 'meh widget-test' 'hover leave'"
+                    :onrightclick "notify-send 'meh widget-test' 'right-clicked'"
+                    (label :class "demo-eventbox"
+                           :text "Hover / click / right-click me")))
+
+            ; ── image ─────────────────────────────────────────────────────────
+            (box :orientation "v" :spacing 6 :class "section"
+                (label :class "section-title" :text "image" :halign "start")
+                (box :spacing 12
+                    (image :icon-name "dialog-information" :icon-size 32)
+                    (image :icon-name "dialog-warning"     :icon-size 24)
+                    (image :icon-name "network-wireless"   :icon-size 20)
+                    (image :icon-name "audio-volume-high"  :icon-size 20)))
+
+            ; ── scale ─────────────────────────────────────────────────────────
+            (box :orientation "v" :spacing 6 :class "section"
+                (label :class "section-title" :text "scale" :halign "start")
+                (label :text "Static (42):" :halign "start")
+                (scale :min 0 :max 100 :value 42
+                       :onchange "notify-send 'meh widget-test' 'scale: {}'")
+                (label :text "Reactive (${COUNTER}):" :halign "start")
+                (scale :min 0 :max 100 :value COUNTER :class "reactive-scale"))
+
+            ; ── progress ──────────────────────────────────────────────────────
+            (box :orientation "v" :spacing 6 :class "section"
+                (label :class "section-title" :text "progress" :halign "start")
+                (label :text "Static 65%:" :halign "start")
+                (progress :value 65 :class "progress-bar")
+                (label :text "Reactive ${COUNTER}%:" :halign "start")
+                (progress :value COUNTER :class "reactive-progress")
+                (label :text "Vertical 40%:" :halign "start")
+                (progress :value 40 :orientation "v" :height 60 :class "progress-v"))
+
+            ; ── circular-progress ─────────────────────────────────────────────
+            (box :orientation "v" :spacing 6 :class "section"
+                (label :class "section-title" :text "circular-progress" :halign "start")
+                (box :spacing 16
+                    (circular-progress :value 75  :thickness 6
+                                       :foreground "#89b4fa" :background "#313244"
+                                       :clockwise true  :width 48)
+                    (circular-progress :value COUNTER :thickness 4
+                                       :foreground "#a6e3a1" :background "#313244"
+                                       :clockwise true  :width 48)
+                    (circular-progress :value 33  :thickness 8
+                                       :foreground "#f38ba8" :background "#313244"
+                                       :clockwise false :start-angle 0 :width 48)))
+
+            ; ── scroll ────────────────────────────────────────────────────────
+            (box :orientation "v" :spacing 6 :class "section"
+                (label :class "section-title" :text "scroll" :halign "start")
+                (scroll :vscroll true :hscroll false :height 80 :class "demo-scroll"
+                    (box :orientation "v" :spacing 2
+                        (for row in '["Row 1","Row 2","Row 3","Row 4","Row 5","Row 6","Row 7","Row 8"]'
+                            (label :text row :halign "start")))))
+
+            ; ── overlay ───────────────────────────────────────────────────────
+            (box :orientation "v" :spacing 6 :class "section"
+                (label :class "section-title" :text "overlay" :halign "start")
+                (overlay :class "demo-overlay"
+                    (box :width 200 :height 56 :class "overlay-base")
+                    (label :text "Overlaid text"
+                           :halign "center" :valign "center"
+                           :class "overlay-label")))
+
+            ; ── revealer ──────────────────────────────────────────────────────
+            (box :orientation "v" :spacing 6 :class "section"
+                (label :class "section-title" :text "revealer" :halign "start")
+                (button :label "Toggle reveal"
+                        :onclick "meh --config ~/Projects/meh/examples/widget-test update REVEALED=${REVEALED == 'true' ? 'false' : 'true'}")
+                (revealer :reveal REVEALED
+                          :transition "slidedown"
+                          :duration 250
+                    (label :text "I was revealed!" :class "reveal-content")))
+
+            ; ── stack ─────────────────────────────────────────────────────────
+            (box :orientation "v" :spacing 6 :class "section"
+                (label :class "section-title" :text "stack" :halign "start")
+                (box :spacing 4
+                    (button :label "Page A" :onclick "meh --config ~/Projects/meh/examples/widget-test update STACK_PAGE=page-a")
+                    (button :label "Page B" :onclick "meh --config ~/Projects/meh/examples/widget-test update STACK_PAGE=page-b")
+                    (button :label "Page C" :onclick "meh --config ~/Projects/meh/examples/widget-test update STACK_PAGE=page-c"))
+                (stack :shown STACK_PAGE :transition "slide-right"
+                    (label :name "page-a" :text "Stack → Page A" :class "stack-page")
+                    (label :name "page-b" :text "Stack → Page B" :class "stack-page")
+                    (label :name "page-c" :text "Stack → Page C" :class "stack-page")))
+
+            ; ── expander ──────────────────────────────────────────────────────
+            (box :orientation "v" :spacing 6 :class "section"
+                (label :class "section-title" :text "expander" :halign "start")
+                (expander :label "Click to expand" :expanded false
+                    (box :orientation "v" :spacing 4
+                        (label :text "Revealed line 1")
+                        (label :text "Revealed line 2")
+                        (label :text "Revealed line 3"))))
+
+            ; ── checkbox ──────────────────────────────────────────────────────
+            (box :orientation "v" :spacing 6 :class "section"
+                (label :class "section-title" :text "checkbox" :halign "start")
+                (box :spacing 16
+                    (checkbox :label "Option A (unchecked)"
+                              :checked false
+                              :ontoggle "notify-send 'meh widget-test' 'checkbox A: {}'")
+                    (checkbox :label "Option B (checked)"
+                              :checked true
+                              :ontoggle "notify-send 'meh widget-test' 'checkbox B: {}'")))
+
+            ; ── input ─────────────────────────────────────────────────────────
+            (box :orientation "v" :spacing 6 :class "section"
+                (label :class "section-title" :text "input" :halign "start")
+                (input :placeholder "Type here, press Enter to accept…"
+                       :onchange "notify-send 'meh widget-test' 'input change: {}'"
+                       :onaccept "notify-send 'meh widget-test' 'input accept: {}'")
+                (input :value "Pre-filled"
+                       :onchange "notify-send 'meh widget-test' 'pre-filled: {}'"))
+
+            ; ── calendar ──────────────────────────────────────────────────────
+            (box :orientation "v" :spacing 6 :class "section"
+                (label :class "section-title" :text "calendar" :halign "start")
+                (calendar
+                    :onclick "notify-send 'meh widget-test' 'date selected: {}'"))
+
+            ; ── combo-box-text ────────────────────────────────────────────────
+            (box :orientation "v" :spacing 6 :class "section"
+                (label :class "section-title" :text "combo-box-text" :halign "start")
+                (combo-box-text
+                    :items '["Alpha", "Beta", "Gamma", "Delta"]'
+                    :active 0
+                    :onchange "notify-send 'meh widget-test' 'combo: {}'"))
+
+            ; ── color-button ──────────────────────────────────────────────────
+            (box :orientation "v" :spacing 6 :class "section"
+                (label :class "section-title" :text "color-button" :halign "start")
+                (color-button
+                    :onchange "notify-send 'meh widget-test' 'color: {}'"))
+
+            ; ── literal ───────────────────────────────────────────────────────
+            (box :orientation "v" :spacing 6 :class "section"
+                (label :class "section-title" :text "literal" :halign "start")
+                (literal :content "<span color='#89b4fa'><b>Blue bold</b></span>  <span color='#a6e3a1'><i>green italic</i></span>  <u>underline</u>"))
+
+        )))
+
+(defwindow widget-test
+    :monitor 0
+    :geometry (geometry
+        :width  "600px"
+        :height "800px"
+        :x "80px"
+        :y "40px"
+        :anchor "top left")
+    :stacking "overlay"
+    :focusable false
+    (widget-test))

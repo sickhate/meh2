@@ -1,0 +1,21 @@
+[package]
+name    = "meh_daemon"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+
+[dependencies]
+meh_core          = { workspace = true }
+meh_gtk4          = { workspace = true }
+meh_script_vars   = { workspace = true }
+eww_shared_util   = { workspace = true }
+simplexpr         = { workspace = true }
+tokio           = { workspace = true }
+anyhow          = { workspace = true }
+tracing         = { workspace = true }
+serde           = { workspace = true }
+serde_json      = { workspace = true }
+nix             = { workspace = true }
+once_cell       = { workspace = true }
+simple-signal   = { workspace = true }
+gtk4            = { workspace = true }

@@ -1,0 +1,34 @@
+[package]
+name    = "meh_gtk4"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+
+[features]
+systray = ["dep:meh_notifier_host", "dep:zbus"]
+animations = ["dep:libadwaita"]
+extra-widgets = []
+shader = ["dep:glow"]
+granular-reload = []
+jq = ["yuck/jq", "simplexpr/jq"]
+
+[dependencies]
+meh_core          = { workspace = true }
+meh_layer_shell   = { workspace = true }
+meh_notifier_host = { workspace = true, optional = true }
+zbus              = { workspace = true, optional = true }
+libadwaita        = { workspace = true, optional = true }
+gtk4              = { workspace = true }
+gtk4-layer-shell  = { workspace = true }
+yuck              = { workspace = true }
+simplexpr         = { workspace = true }
+eww_shared_util   = { workspace = true }
+anyhow            = { workspace = true }
+thiserror         = { workspace = true }
+tracing           = { workspace = true }
+once_cell         = { workspace = true }
+serde             = { workspace = true }
+serde_json        = { workspace = true }
+glow              = { workspace = true, optional = true }
+tokio             = { workspace = true }
+itertools         = { workspace = true }

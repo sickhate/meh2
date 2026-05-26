@@ -1,0 +1,23 @@
+[package]
+name    = "meh_script_vars"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+
+[features]
+dbus-vars    = ["dep:zbus"]
+inotify-vars = ["dep:notify"]
+
+[dependencies]
+meh_core        = { workspace = true }
+yuck            = { workspace = true }
+simplexpr       = { workspace = true }
+eww_shared_util = { workspace = true }
+tokio           = { workspace = true }
+nix             = { workspace = true }
+anyhow          = { workspace = true }
+thiserror       = { workspace = true }
+tracing         = { workspace = true }
+zbus            = { workspace = true, optional = true }
+notify          = { workspace = true, optional = true }
+futures         = { workspace = true }

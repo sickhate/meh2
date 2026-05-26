@@ -1,0 +1,41 @@
+[package]
+name    = "meh2"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+
+[[bin]]
+name = "meh2"
+path = "src/main.rs"
+
+[features]
+# Build profiles — pick one via --features
+minimal = []
+default = ["systray", "dbus-vars", "inotify-vars", "animations", "extra-widgets", "granular-reload", "jq", "tz"]
+full    = ["default", "shader"]
+
+# Individual capabilities
+systray         = ["meh_gtk4/systray"]
+dbus-vars       = ["meh_script_vars/dbus-vars"]
+inotify-vars    = ["meh_script_vars/inotify-vars"]
+animations      = ["meh_gtk4/animations"]
+extra-widgets   = ["meh_gtk4/extra-widgets"]
+shader          = ["meh_gtk4/shader"]
+granular-reload = ["meh_gtk4/granular-reload"]
+# Expression language extensions (costly at link time)
+jq = ["simplexpr/jq", "yuck/jq", "meh_gtk4/jq"]
+tz = ["simplexpr/tz"]
+
+[dependencies]
+meh_daemon         = { workspace = true }
+meh_core           = { workspace = true }
+meh_gtk4           = { workspace = true }
+meh_script_vars    = { workspace = true }
+simplexpr          = { workspace = true }
+yuck               = { workspace = true }
+clap               = { workspace = true }
+clap_complete      = { workspace = true }
+anyhow             = { workspace = true }
+tracing            = { workspace = true }
+tracing-subscriber = { workspace = true }
+tokio              = { workspace = true }

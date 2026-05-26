@@ -1,0 +1,22 @@
+[package]
+name    = "meh_core"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+
+[dependencies]
+yuck            = { workspace = true }
+simplexpr       = { workspace = true }
+eww_shared_util = { workspace = true }
+anyhow          = { workspace = true }
+thiserror       = { workspace = true }
+serde           = { workspace = true }
+serde_json      = { workspace = true }
+itertools       = { workspace = true }
+once_cell       = { workspace = true }
+tokio           = { workspace = true }
+bincode         = { workspace = true }
+grass              = { workspace = true }
+tracing            = { workspace = true }
+nix                = { workspace = true }
+codespan-reporting = { workspace = true }

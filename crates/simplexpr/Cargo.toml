@@ -1,0 +1,48 @@
+[package]
+name = "simplexpr"
+version = "0.1.0"
+authors = ["elkowar <5300871+elkowar@users.noreply.github.com>"]
+edition = "2021"
+license = "MIT"
+description = "A simple expression language, used as a part of eww"
+repository = "https://github.com/elkowar/eww"
+homepage = "https://github.com/elkowar/eww"
+
+
+build = "build.rs"
+
+[features]
+# jq(json, filter) expression function — pulls in 5 jaq crates (~1.5 MB in release)
+jq = ["dep:jaq-core", "dep:jaq-parse", "dep:jaq-std", "dep:jaq-interpret", "dep:jaq-syn"]
+# formattime(ts, fmt, tz) with named timezones — pulls in chrono-tz (~1.5 MB timezone DB)
+tz = ["dep:chrono-tz"]
+
+[dependencies]
+eww_shared_util.workspace = true
+
+bytesize.workspace = true
+cached.workspace = true
+chrono-tz      = { workspace = true, optional = true }
+chrono = { workspace = true, features = ["unstable-locales"] }
+itertools.workspace = true
+jaq-core       = { workspace = true, optional = true }
+jaq-parse      = { workspace = true, optional = true }
+jaq-std        = { workspace = true, optional = true }
+jaq-interpret  = { workspace = true, optional = true }
+jaq-syn        = { workspace = true, optional = true }
+lalrpop-util.workspace = true
+once_cell.workspace = true
+regex.workspace = true
+serde_json.workspace = true
+serde = { workspace = true, features = ["derive"] }
+static_assertions.workspace = true
+strsim.workspace = true
+strum = { workspace = true, features = ["derive"] }
+thiserror.workspace = true
+
+
+[build-dependencies]
+lalrpop.workspace = true
+
+[dev-dependencies]
+insta.workspace = true

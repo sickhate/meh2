@@ -1,0 +1,116 @@
+[workspace]
+members = ["crates/*"]
+resolver = "2"
+
+# ── Features ──────────────────────────────────────────────────────────────────
+#
+# Three named build profiles (not Cargo profiles — these are workspace features
+# that the top-level `cli` crate re-exports):
+#
+#   minimal : cargo build --release --no-default-features --features minimal
+#   default : cargo build --release                (includes systray, dbus-vars, …)
+#   full    : cargo build --release --features full
+#
+# Every feature must have zero idle cost when compiled in but unused in yuck.
+
+# ── Workspace dependencies ────────────────────────────────────────────────────
+
+[workspace.dependencies]
+# Internal crates
+meh_core          = { path = "crates/core",         version = "0.1.0" }
+meh_gtk4          = { path = "crates/gtk4-impl",    version = "0.1.0" }
+meh_layer_shell   = { path = "crates/layer-shell",  version = "0.1.0" }
+meh_script_vars   = { path = "crates/script-vars",  version = "0.1.0" }
+meh_daemon        = { path = "crates/daemon",        version = "0.1.0" }
+meh_notifier_host = { path = "crates/notifier-host", version = "0.1.0" }
+
+# Copied from elkowar/eww (MIT)
+yuck            = { path = "crates/yuck",            version = "0.1.0" }
+simplexpr       = { path = "crates/simplexpr",       version = "0.1.0" }
+eww_shared_util = { path = "crates/eww_shared_util", version = "0.1.0" }
+
+# GTK4 stack (from Ewwii)
+gtk4             = { version = "0.10.3", features = ["v4_8", "v4_18"] }
+gtk4-layer-shell = { version = "0.6.3" }
+libadwaita       = { version = "0.8", features = ["v1_3"], default-features = false }
+
+# Async
+tokio      = { version = "1.39.2", features = ["full"] }
+futures    = { version = "0.3.30" }
+
+# Errors / logging
+anyhow    = "1.0.86"
+thiserror = "1.0"
+tracing   = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Serialisation
+serde      = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# CLI
+clap          = { version = "4.5.1", features = ["derive"] }
+clap_complete = "4.5.12"
+
+# Parsing / expressions (yuck / simplexpr deps)
+lalrpop     = { version = "0.21", features = ["unicode"] }
+lalrpop-util = { version = "0.21", features = ["unicode"] }
+maplit      = "1"
+once_cell   = "1.19"
+regex       = "1.10.5"
+strum       = { version = "0.26", features = ["derive"] }
+strsim      = "0.11"
+itertools   = "0.13.0"
+derive_more = { version = "1", features = ["as_ref", "debug", "display", "from", "from_str"] }
+ref-cast    = "1.0.22"
+smart-default = "0.7.1"
+static_assertions = "1.1.0"
+codespan-reporting = "0.11"
+
+# simplexpr extras
+bytesize   = "2.0.1"
+cached     = "0.53.1"
+chrono     = { version = "0.4.38", features = ["unstable-locales"] }
+chrono-tz  = "0.10.0"
+jaq-core      = "1.5.1"
+jaq-parse     = "1.0.3"
+jaq-std       = "1.6.0"
+jaq-interpret = "1.5.0"
+jaq-syn       = "1.6.0"
+
+# XML parsing (notifier-host SNI introspection)
+quick-xml  = { version = "0.37.1", features = ["serialize"] }
+
+# Misc
+notify       = "6.1.1"
+nix          = { version = "0.29.0", features = ["process", "fs", "signal"] }
+log          = "0.4"
+grass        = "0.13.4"
+bincode      = "1.3.3"
+unescape     = "0.1"
+wait-timeout = "0.2"
+extend       = "1.2"
+simple-signal = "1.1"
+shell-words  = "1.1.0"
+
+# DBus (systray + dbus-vars features)
+zbus = { version = "3.15.2", default-features = false, features = ["tokio"] }
+
+# OpenGL (shader feature)
+glow = "0.17"
+
+# Dev / test
+insta             = "1.7"
+pretty_assertions = "1.4.0"
+
+# ── Release profile ───────────────────────────────────────────────────────────
+
+[profile.release]
+opt-level      = "z"
+lto            = "fat"
+panic          = "abort"
+strip          = "symbols"
+codegen-units  = 1
+
+[profile.dev]
+split-debuginfo = "unpacked"

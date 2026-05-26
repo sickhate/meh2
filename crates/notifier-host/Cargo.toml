@@ -1,0 +1,16 @@
+[package]
+name    = "meh_notifier_host"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+# Ported from elkowar/eww crates/notifier_host (MIT)
+
+[dependencies]
+zbus       = { workspace = true }
+anyhow     = { workspace = true }
+thiserror  = { workspace = true }
+tracing    = { workspace = true }
+tokio      = { workspace = true }
+futures    = { workspace = true }
+serde      = { workspace = true }
+quick-xml  = { workspace = true }

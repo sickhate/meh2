@@ -1,0 +1,10 @@
+/target/
+**/*.rs.bk
+.env
+.env.*
+*.orig
+*.pkg.tar.zst
+*.pkg.tar.xz
+/src/
+/pkg/
+/meh/

@@ -1,0 +1,11 @@
+[package]
+name    = "meh_layer_shell"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+
+[dependencies]
+gtk4             = { workspace = true }
+gtk4-layer-shell = { workspace = true }
+anyhow           = { workspace = true }
+tracing          = { workspace = true }
