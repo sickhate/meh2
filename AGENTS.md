@@ -1,942 +1,580 @@
-# meh
+# meh2
 
-> **meh** = eww + GTK4. A modern, Wayland-only, performance-first reimagining
-> of [elkowar/eww](https://github.com/elkowar/eww) on GTK4. Built primarily for
-> personal use. Public so anyone who wants it can use it.
-> 
-> Pronounced “meh”, as in the noise you make when someone shows you yet another
-> bar for Wayland. The original eww is pronounced “with sufficient amounts of
-> disgust” — we’re keeping the energy.
-> 
-> Binary name: `meh`. Daemon command: `meh daemon`. Config dir: `~/.config/meh/`.
+> **meh2** = meh + Rhai + plugin system. A fork of meh (the GTK4 eww-successor)
+> that adds an in-process Rhai scripting engine, a Rhai-based plugin system, and
+> eventually full Rhai widget configuration alongside yuck.
+>
+> Binary: `meh2`. Config dir: `~/.config/meh2/`. Parent project: `~/Projects/meh`.
 
 -----
 
-## Current state (last updated 2026-05-24)
+## Current state (last updated 2026-05-26)
 
-**Phase 1 complete. Phase 2 complete (all 5 items done 2026-05-24).**
+**Phase 0 (fork baseline) complete.** Binary renamed `meh2`, config dir `~/.config/meh2`,
+cache/socket prefixes updated. All meh features present and working.
 
-Widget verification config is at `examples/widget-test/` — run with
-`meh --config ~/Projects/meh/examples/widget-test daemon` then
-`meh --config ~/Projects/meh/examples/widget-test open widget-test`.
-
-To test systray: add `(systray)` to a window in your yuck config. The widget
-shows one button per running tray item; left-click activates it. Right-click
-menus and icon-change signals are Phase 2 work.
-
-Everything else in Phase 1 is complete:
-- Three build profiles: minimal=4.2 MiB, default=6.9 MiB, full=6.9 MiB
-- Reactive binding system (ADR-0007): `BINDING_COLLECTOR` thread-local, `Binding`
-  structs, `update_bindings()` — O(bindings) updates, no full tree rebuild
-- Poll subprocess gating (ADR-0008): polls paused when no windows open; daemon
-  idle CPU is ~0.17% (static bar) / ~0.35% (1s clock poll)
-- CI at `.github/workflows/ci.yml`; minimal-bar example at `examples/minimal-bar/`
-- `jq` and `tz` features gate the jaq and chrono-tz link-time cost (saves ~2.7 MiB
-  from the minimal build)
-
-Known outstanding issues:
-- `hostname` command not in PATH on this machine — HOSTNAME shows "" in state
-- `minimal` binary target was 5 MiB; achieved 4.2 MiB
+**Phase 1 in progress.** Rhai engine for `defpoll`/`deflisten` script sources — not started yet.
 
 -----
 
 ## Read this first
 
-You are Claude Code working in the **meh** repository. This file is the single
-source of truth for what this project is, what it isn’t, and how it’s built.
-Read it top-to-bottom at the start of every session. If anything you’re about
-to do contradicts this file, stop and ask before doing it.
+You are Claude Code working in the **meh2** repository. This file is the single
+source of truth for what this project is, what it is building toward, and the
+rules that govern every change. Read it top-to-bottom at the start of every
+session. If anything you are about to do contradicts this file, stop and ask.
+
+The parent project `~/Projects/meh` is **read-only reference** — never modify it.
+meh2 builds on meh's foundation and diverges intentionally. Cherry-pick bugfixes
+from meh into meh2 via `git cherry-pick`; never merge wholesale.
 
 -----
 
 ## Table of contents
 
-1. [What meh is, in one paragraph](#what-meh-is-in-one-paragraph)
-1. [The prime directive](#the-prime-directive)
-1. [Hard scope](#hard-scope)
-1. [Lineage and where to fork from](#lineage-and-where-to-fork-from)
-1. [Background — how we got here](#background--how-we-got-here)
-1. [Features inherited from eww](#features-inherited-from-eww)
-1. [Architecture](#architecture)
-1. [Architecture decisions (ADRs)](#architecture-decisions-adrs)
-1. [Build profiles and Cargo features](#build-profiles-and-cargo-features)
-1. [Coding conventions](#coding-conventions)
-1. [Performance principles](#performance-principles)
-1. [Roadmap](#roadmap)
-1. [Rules for Claude Code](#rules-for-claude-code)
-1. [Getting started — step by step](#getting-started--step-by-step)
-1. [Claude Code setup](#claude-code-setup)
+1. [What meh2 is](#what-meh2-is)
+2. [The prime directive](#the-prime-directive)
+3. [Hard scope](#hard-scope)
+4. [Architecture](#architecture)
+5. [Architecture decisions (ADRs)](#architecture-decisions-adrs)
+6. [Build profiles and Cargo features](#build-profiles-and-cargo-features)
+7. [Roadmap](#roadmap)
+8. [Coding conventions](#coding-conventions)
+9. [Performance principles](#performance-principles)
+10. [Rules for Claude Code](#rules-for-claude-code)
 
 -----
 
-## What meh is, in one paragraph
+## What meh2 is
 
-A widget system and status bar for Wayland compositors (Hyprland, Sway, river,
-niri, …) written in Rust on GTK4. It’s a fork descended from elkowar/eww. Goals,
-in order: (1) be as light and fast as a bar can be — sub-0.1% idle CPU, small
-binary, low RAM; (2) keep every feature eww had so existing users feel at home;
-(3) add a small number of new things that GTK4 makes possible (animations, GL
-shaders, granular hot reload); (4) keep the yuck config language so existing
-configs and the wider eww rice ecosystem still apply.
+meh2 extends meh with three layered additions, implemented in order:
 
-It is **not** a plugin platform. It is **not** trying to compete with Waybar,
-Quickshell, or Astal. It is a focused, well-engineered single-purpose tool.
+1. **Rhai script engine** — `defpoll` and `deflisten` sources can be `.rhai`
+   files (or inline Rhai blocks) instead of shell commands. The engine runs
+   in-process: no fork, no subprocess, no interpreter startup per poll tick.
+   Rhai API exposes only what the config needs: file reads, `/proc` helpers,
+   `meh2.update()`. Everything else is sandboxed out.
+
+2. **Rhai event handlers** — `:onclick`, `:onscroll`, `:onchange` can reference
+   `.rhai` files or inline Rhai expressions. Handlers run on a dedicated thread
+   with a timeout guard so a runaway script cannot block GTK.
+
+3. **Rhai plugin system** — plugins are `.rhai` script files discovered from
+   `~/.config/meh2/plugins/`. Each plugin can register new `defpoll`/`deflisten`
+   sources and contribute `defwidget`-compatible data. No native code, no `.so`,
+   no ABI surface.
+
+4. **Full Rhai widget config** (long-term) — widget trees can be defined in
+   Rhai alongside yuck. Hybrid: yuck handles layout structure, Rhai handles
+   imperative logic, computed values, and dynamic widget composition.
+
+**meh2 keeps everything meh has.** All existing yuck configs work without
+modification. The additions are strictly additive: nothing forces users to
+use Rhai. A user who never writes a `.rhai` file gets pure meh behaviour
+with zero overhead.
 
 -----
 
 ## The prime directive
 
-**meh must always run as light and fast as physically possible while still
-offering the full feature set to users who want it.**
+**meh2 must be lighter and faster than equivalent meh configurations that
+use shell subprocesses for data, while remaining as light as meh when Rhai
+is not used.**
 
-This is non-negotiable. Every line of code in this repo must respect this:
+Concretely:
 
-1. **Off by default if it has any runtime cost.** Tray DBus connections, GL
-   contexts, animation tickers — none of these spin up unless the user’s yuck
-   config actually uses them.
-1. **Pay-for-what-you-use compilation.** Heavy features are Cargo features,
-   not unconditional dependencies. `cargo build --release --no-default-features`
-   must produce a working minimal bar.
-1. **Idle cost is sacred.** A running `meh` showing a clock and a workspace
-   indicator must sit at **< 0.1% CPU** on modern hardware. If a change moves
-   that number up, it needs justification.
-1. **Lazy init, always.** Closed window → no widgets allocated. No `(systray)`
-   in config → no DBus connection. Unused `poll` var → command never runs.
-1. **No background tasks “just in case”.** Every spawned tokio/glib task
-   needs a concrete user-visible reason to be running right now.
+- A config that uses only yuck + CSS and no Rhai: **identical overhead to meh**.
+  The Rhai engine must not spin up at all if no `.rhai` source is referenced.
+- A config that replaces bash/python poll scripts with Rhai: **lower peak RSS
+  and lower poll latency** than the equivalent meh config (no fork, no python).
+- Idle CPU target: same as meh — **< 0.1%** on a static bar, **< 0.4%** with
+  a 1s clock poll.
+- Plugin scripts: each loaded plugin adds at most **~50 KB** (AST cache).
+  Ten plugins should cost less than one bash subprocess.
 
-When in doubt, the **light path is the default**. The feature-rich path is
-opt-in via Cargo feature, via yuck config, or both.
-
-The user’s words: *“sempre com opção para correr o mais leve e rápido e
-consumir menos possível, contudo mantendo as features todas.”* Ship every
-feature. Make the user who only uses 10% of them pay for 10% of them.
+Every PR must answer:
+- Does this add overhead when Rhai is not used? (If yes, it needs a feature gate.)
+- Does this add overhead when Rhai is used but the specific feature isn't? (If yes, lazy-init it.)
+- What is the per-tick cost of this change? Measure it.
 
 -----
 
 ## Hard scope
 
-- **Wayland only.** No X11, no XCB, no `_NET_WM_STRUT`. Ripped out, not
-  feature-gated. macOS and Windows are out of scope.
-- **GTK4 only.** No gtk3 shims, no gtk3-compat layer.
-- **Yuck for configuration.** No rhai, no Lua, no scripting language.
-- **No plugin system.** New widgets and var sources are added by writing
-  Rust against the core crates and shipping a new `meh` build. Users who
-  want exotic widgets fork or contribute upstream. See [ADR-0004](#adr-0004--no-plugin-system).
-- **System tray is opt-in.** Compiled in `default` and `full` profiles;
-  excluded from `minimal`. See [ADR-0005](#adr-0005--system-tray-stays-as-an-opt-in-feature).
+**In scope:**
+- Rhai as a scripting layer for poll/listen sources and event handlers.
+- Rhai-only plugin system (`.rhai` files, no native code).
+- Hybrid yuck+Rhai widget configuration.
+- Everything meh already does.
 
-If a task suggests adding X11 / macOS / rhai / gtk3 / plugin loading,
-**stop and ask why** before doing anything.
+**Out of scope:**
+- X11. Wayland-only.
+- GTK3. GTK4-only.
+- Native (`.so`) plugin loading — ABI hazard, not needed when Rhai covers the use case.
+- Lua, WASM, Python, JavaScript, or any other scripting language.
+- Features that conflict with the prime directive and cannot be made zero-cost when unused.
 
------
-
-## Lineage and where to fork from
-
-Three upstream repos matter. Clone all three next to the `meh/` directory.
-
-|Repo                  |URL                                     |Branch  |License|Why we care                                                                                                                   |
-|----------------------|----------------------------------------|--------|-------|------------------------------------------------------------------------------------------------------------------------------|
-|**elkowar/eww** (main)|https://github.com/elkowar/eww          |`master`|MIT    |Yuck parser (`crates/yuck/`), reference for widget semantics, the systray implementation (`crates/notifier_host/`) we’ll port.|
-|**elkowar/eww** (gtk4)|https://github.com/elkowar/eww/tree/gtk4|`gtk4`  |MIT    |Partial GTK4 port elkowar started and shelved. Useful as a reference for widget mappings (gtk3 → gtk4 patterns). Stale.       |
-|**Ewwii-sh/ewwii**    |https://github.com/Ewwii-sh/ewwii       |`main`  |GPL-3.0|Complete GTK4 port with working `gtk4-layer-shell` integration and hot reload. Uses rhai for config (we replace it).          |
-
-```bash
-# from the parent directory where meh/ lives
-git clone https://github.com/elkowar/eww          eww-upstream
-git clone -b gtk4 https://github.com/elkowar/eww  eww-gtk4-branch
-git clone https://github.com/Ewwii-sh/ewwii       ewwii-upstream
-```
-
-**Our base.** Fork from `Ewwii-sh/ewwii`. The GTK4 port is done there, layer-shell
-works, hot reload is wired. We pull `crates/yuck/` from `elkowar/eww` (MIT) and
-plug it into Ewwii’s widget backend, removing rhai entirely. See ADR-0001 and
-ADR-0002.
-
-**Licensing of meh.** GPL-3.0, inherited from Ewwii. Code copied from
-`elkowar/eww` keeps its MIT header. New files we write are GPL-3.0.
-
------
-
-## Background — how we got here
-
-This section captures the reasoning that produced this file. Read it once so
-you don’t have to re-litigate decisions.
-
-### Why fork Ewwii and not eww directly
-
-elkowar/eww is GTK3. Porting GTK3 → GTK4 by hand is hundreds of hours of
-mechanical work: signals become `EventController`s, `add()` and `pack_start()`
-become `set_child()` and `append()`, the `draw` signal is gone, gtk3-rs itself
-is no longer maintained. elkowar started a `gtk4` branch but stalled — the
-stated blocker was preserving X11 and macOS support, which GTK4 made awkward
-(notably, early GTK4 couldn’t use `wlr-layer-shell` on Wayland). We don’t
-have that constraint: Wayland only.
-
-`gtk4-layer-shell` now exists and works well. Ewwii already does the GTK4
-port, already integrates `gtk4-layer-shell`, already has hot reload working.
-The downsides: GPL-3.0 (manageable), small project (~74 stars at last count),
-and they replaced yuck with rhai for configuration. We fix the rhai problem
-by pulling yuck back in from eww.
-
-### Why we removed the plugin system
-
-An earlier draft of this file specified a custom plugin system. We decided
-against it: eww never had plugins and didn’t need them — `defwidget`
-composition plus `poll`/`listen` scripts covers most user extensibility. A
-plugin API means a stable ABI surface, dylib loading hazards on top of GTK
-FFI, and a non-trivial design discussion we don’t need to have. Adding
-plugins later if there’s demand is much easier than removing them once
-shipped. See ADR-0004.
-
-### Why tray is opt-in but kept
-
-System tray is the single most-requested eww feature (issue #111 was open for
-years), and it’s how users interact with apps like NetworkManager, Steam,
-Discord. We keep it. But it pulls in `zbus`, which a minimal build shouldn’t have to
-link. So it’s a Cargo feature, on by default in the `default` profile, off
-in `minimal`. (`dbusmenu` was originally planned but dropped — GTK3-only.)
-See ADR-0005.
-
-### What this project is not
-
-- Not a drop-in eww replacement. Configs will work or work with small edits.
-- Not competing with Waybar / Ironbar / Quickshell / Astal. The user doesn’t
-  care about competition; the goal is “the bar I want to run on my machine”.
-- Not a research project. Boring tech, good defaults, performant idle.
-
------
-
-## Features inherited from eww
-
-Everything below comes from elkowar/eww and needs to land in meh. Status
-notes refer to the path from Ewwii’s GTK4 base — most things are already
-ported but need re-verification once yuck replaces rhai.
-
-**Layout widgets:** `box`, `centerbox`, `eventbox`, `expander`, `revealer`,
-`overlay`, `stack`, `scroll`.
-
-**Display widgets:** `label`, `image`, `progress`, `circular-progress`,
-`graph`, `transform`.
-
-**Interactive widgets:** `button`, `checkbox`, `slider`, `input`,
-`combo-box-text`, `color-button`, `color-chooser`, `calendar`.
-
-**System widgets:** `systray` (opt-in, see ADR-0005).
-
-**Menus.** eww has no generic menu widget. Patterns:
-
-- `combo-box-text` for dropdowns.
-- Right-click context menus on tray icons — deferred to Phase 2 (`dbusmenu` is GTK3-only; needs a GTK4 replacement such as `gtk4::PopoverMenu` built from the SNI menu path).
-- For custom popup menus, build them as separate eww windows triggered by
-  `meh open <window>` from a button’s `onclick`. Same approach in meh.
-
-**Configuration:** yuck (S-expression based), CSS for styling.
-
-**Script vars:** `poll` (run command on interval), `listen` (stream lines
-from a long-running command). We add `subscribe` for DBus/inotify-driven vars.
-
-**IPC:** unix socket; `meh open`, `meh close`, `meh reload`, `meh update var=value`.
-
-**Hot reload:** Ewwii has window-level. Our roadmap targets widget-level.
+If a task suggests X11 / GTK3 / `.so` plugins / other scripting languages, **stop and ask**.
 
 -----
 
 ## Architecture
 
 ```
-meh/
+meh2/
 ├── crates/
-│   ├── yuck/           # parser, copied from elkowar/eww (MIT). Standalone, no GTK deps.
-│   ├── core/           # widget tree IR, reactive var graph, evaluation.
-│   ├── gtk4/           # GTK4 widget implementations: one module per widget.
-│   ├── layer-shell/    # gtk4-layer-shell window placement, exclusive zones, anchors.
-│   ├── script-vars/    # poll / listen / subscribe (DBus via zbus, inotify, /proc).
-│   ├── notifier-host/  # StatusNotifierHost — ported from elkowar/eww. Opt-in feature.
-│   ├── daemon/         # tokio runtime, IPC over unix socket, hot reload supervisor.
-│   └── cli/            # `meh` binary — both the daemon entry and the client commands.
-├── examples/           # sample configs (minimal-bar, full-bar, …).
-├── benches/            # criterion benches for hot paths.
-├── CLAUDE.md           # this file.
-└── README.md
+│   ├── yuck/            # S-expression parser (from elkowar/eww, MIT). No GTK.
+│   ├── core/            # Widget tree IR, reactive var graph, IPC types.
+│   ├── gtk4-impl/       # GTK4 widget implementations, reactive bindings.
+│   ├── layer-shell/     # gtk4-layer-shell window placement.
+│   ├── script-vars/     # defpoll / deflisten / defsubscribe. Shell + Rhai sources.
+│   ├── rhai-engine/     # (Phase 1) Rhai engine wrapper: sandbox, API surface, timeout.
+│   ├── plugin-host/     # (Phase 3) Plugin discovery, manifest, lifecycle.
+│   ├── notifier-host/   # StatusNotifierHost. Opt-in systray. From elkowar/eww (MIT).
+│   ├── daemon/          # tokio runtime, IPC server, hot reload supervisor.
+│   └── cli/             # meh2 binary — daemon + client subcommands.
+├── examples/
+│   ├── minimal-bar/     # Minimal yuck-only config (same as meh).
+│   ├── rhai-bar/        # (Phase 1) Minimal bar using Rhai poll sources.
+│   └── plugin-demo/     # (Phase 3) Bar with a sample plugin loaded.
+├── benches/
+└── CLAUDE.md            # This file.
 ```
 
-**Crate-level rules.**
-
-- `yuck/` and `core/` must not depend on `gtk4` (the crate). They’re pure data
-  pipelines. This makes them fast to compile and fast to test.
-- `gtk4/` is the only crate that knows about GTK widgets. Everything above
-  it works in terms of an `Element` IR.
-- `notifier-host/` lives in its own crate, gated by the `systray` feature
-  at the top level. `gtk4/` calls into it only when that feature is on.
-- `daemon/` and `cli/` are merged into one binary (`meh`) using clap subcommands.
+**Crate rules:**
+- `yuck/` and `core/` must not depend on `gtk4` or `rhai`.
+- `rhai-engine/` must not depend on `gtk4`. It is pure logic + sandbox.
+- `script-vars/` depends on `rhai-engine` (behind `rhai` feature). Shell path unchanged when feature is off.
+- `gtk4-impl/` depends on `script-vars` for event handlers.
+- `plugin-host/` depends on `rhai-engine`, not on `gtk4` directly.
 
 -----
 
 ## Architecture decisions (ADRs)
 
-Append-only log. When you make a decision that isn’t already covered here,
-**add a new ADR** with the next number. Never edit accepted ADRs in place —
-if you change your mind, write a new ADR that supersedes the old one.
+Append-only. Add a new ADR when you make a decision not already covered.
+Never edit accepted ADRs in place; supersede with a new one.
 
-### ADR-0001 — Fork Ewwii-sh/ewwii, not elkowar/eww or its gtk4 branch
+### ADR-M001 — Inherit all meh ADRs
 
-**Status:** Accepted · **Date:** 2026-05-22
+**Status:** Accepted · **Date:** 2026-05-26
 
-**Context.** elkowar/eww main is GTK3 (months of porting). Its `gtk4` branch is
-stale and was scoped for X11+macOS we don’t want. Ewwii is GTK4, has
-`gtk4-layer-shell`, has hot reload — but uses rhai for config and is GPL-3.0.
+**Decision.** All ADRs from the meh project (ADR-0001 through ADR-0010) apply
+to meh2 unchanged. meh2 extends meh; it does not contradict it. Where meh2
+diverges (e.g. meh ADR-0004 said "no plugin system"), the meh2 ADR below
+supersedes the meh ADR for this project only.
 
-**Decision.** Fork Ewwii. Pull `crates/yuck/` from elkowar/eww (MIT). Strip X11.
-Iterate from there.
+### ADR-M002 — Rhai, not Lua/WASM/JS for scripting
 
-**Consequences.** Positive: hundreds of hours of port work already done.
-Negative: GPL-3.0 inherited; upstream patches need cherry-picking not merging;
-Ewwii is small so no upstream momentum to lean on.
+**Status:** Accepted · **Date:** 2026-05-26
 
-**Alternatives.** Port elkowar/eww main ourselves (too much mechanical work).
-Resume the eww gtk4 branch (stale, X11-encumbered). Use Ewwii unmodified
-(rhai). Write from scratch (yuck parser, var graph, daemon, script-vars
-already exist).
+**Context.** Several scripting options exist: Lua (mlua), WASM (wasmtime),
+JavaScript (boa/deno), Python (pyo3), Rhai. We need one that: (a) embeds
+cleanly in Rust with no C FFI hazard, (b) is sandboxed by default, (c) has
+a small binary footprint, (d) is fast enough for sub-second poll scripts.
 
-### ADR-0002 — Yuck for configuration, not rhai
+**Decision.** Rhai (`crates.io/crates/rhai`). It is purpose-built for embedding
+in Rust, sandboxed by default (no filesystem/network unless explicitly granted),
+adds ~1–2 MB to the binary, and handles our use case (data fetch + format) in
+< 1 ms per call.
 
-**Status:** Accepted · **Date:** 2026-05-22
+**Consequences.** Positive: clean Rust API, no unsafe FFI, small footprint,
+fast enough for UI data scripts. Negative: Rhai is not Lua (smaller community,
+less documentation); not suitable for heavy compute (interpreted, ~10–50×
+slower than native Rust for tight loops — but our scripts are I/O-bound).
 
-**Context.** Ewwii replaced eww’s yuck with rhai. Yuck is declarative and
-familiar to the eww community; rhai is imperative and unfamiliar.
+**Alternatives.** Lua (mlua) — excellent but requires C FFI. JS (boa) —
+larger footprint, immature embedding API. WASM (wasmtime) — best sandbox but
+500 KB+ per module, overkill for a bar script. Python (pyo3) — huge dep.
 
-**Decision.** Pull `crates/yuck/` from elkowar/eww (MIT) into our tree as-is.
-Wire it into the widget backend from Ewwii. Rhai is removed. Yuck compiles to
-an IR once at load; runtime updates mutate the reactive graph, no re-parse.
+### ADR-M003 — Rhai sandbox: explicit allowlist, deny-by-default
 
-**Consequences.** Positive: existing eww configs work (or work with small
-edits); rice ecosystem stays relevant; yuck parser is production-tested.
-Negative: less expressive than rhai (no recursive macros); have to re-implement
-yuck → widget mapping on Ewwii’s backend.
+**Status:** Accepted · **Date:** 2026-05-26
 
-**Alternatives.** Keep rhai (alienates the ecosystem). Design a new language
-(yak shaving). Use Ewwii’s StaticScript transpiler (incomplete, still rhai
-underneath).
+**Context.** Plugin scripts from the community run in the same process as the
+GTK daemon. A malicious or buggy script must not be able to: read arbitrary
+files, open network connections, spawn subprocesses, or call `std::process::exit`.
 
-### ADR-0003 — Wayland-only, no X11
+**Decision.** The `rhai-engine` crate creates a sandboxed `rhai::Engine` with:
+- File I/O disabled by default. Opt-in: `meh2.read_file(path)` checks a
+  path allowlist defined in the user's `meh2.yuck`.
+- No subprocess spawning (`std::process` module not registered).
+- No network access (no HTTP module registered).
+- `meh2.update(var, value)` — the only write-back channel to the daemon.
+- Per-call timeout: 500 ms hard limit via `Engine::set_max_operations`.
+  Scripts exceeding this are interrupted and the error logged; the last
+  good value is kept.
+- Stack depth limit: `Engine::set_max_call_levels(64)`.
 
-**Status:** Accepted · **Date:** 2026-05-22
+Plugin scripts that need file access declare it in their manifest and the user
+approves. The path allowlist is stored in the daemon at startup.
 
-**Context.** Maintaining both X11 and Wayland means two backends, doubled CI,
-manual `_NET_WM_STRUT` re-implementation, CSS quirks per backend. User’s setup
-is Hyprland; X11 is dead weight for them.
+**Consequences.** Positive: community plugins cannot exfiltrate data or crash
+the daemon. Negative: scripts that genuinely need shell access must still use
+`deflisten`/`defpoll` with a bash source; Rhai cannot replace all shell use
+cases (e.g. piped commands, dbus-monitor output). That is acceptable.
 
-**Decision.** Wayland only. X11 code removed, not feature-gated. Window
-placement exclusively via `gtk4-layer-shell`.
+### ADR-M004 — Plugin system: Rhai-only, no native `.so`
 
-**Consequences.** Positive: smaller codebase, no `cfg(feature = "x11")` noise,
-single-row CI. Negative: X11 users keep using eww; macOS implicitly unsupported.
+**Status:** Accepted · **Date:** 2026-05-26
 
-**Alternatives.** Feature-flagged X11 (feature-flagged backends nobody runs
-rot). XWayland only (layer-shell doesn’t work through XWayland).
+**Context.** meh ADR-0004 rejected plugins entirely. meh2 revisits this but
+constrains the design. A Rust dylib plugin API would require a stable ABI,
+linker symbol resolution at runtime, and exposes GTK FFI through `dlopen` —
+all serious hazards.
 
-### ADR-0004 — No plugin system
+**Decision.** Plugins are `.rhai` files only. No native code. The `plugin-host`
+crate discovers plugins from `~/.config/meh2/plugins/` and `~/.local/share/meh2/plugins/`.
+Each plugin is a directory containing:
+- `plugin.toml` — manifest: name, version, author, description, file-access
+  allowlist, declared vars (name + type + poll interval or listen mode).
+- `main.rhai` — entry point. Exports named functions matching declared vars.
 
-**Status:** Accepted · **Date:** 2026-05-22
+The daemon loads plugins at startup, registers their declared vars into the
+var graph, and calls the relevant Rhai functions on each tick / event.
 
-**Context.** Earlier drafts proposed a plugin API. eww itself never had one
-and the user community managed fine with `defwidget` plus `poll`/`listen`
-scripts. A plugin system means a stable ABI surface, dylib hazards on top of
-GTK FFI, and ongoing maintenance of a public extension contract. None of that
-serves the prime directive.
+**Consequences.** Positive: zero ABI surface, sandboxed by ADR-M003, small
+per-plugin overhead (~50 KB AST), crashes are caught exceptions not segfaults.
+Negative: plugins cannot do anything that requires native Rust (custom GTK
+widgets, OpenGL, DBus services). For those, fork meh2 and add a crate.
 
-**Decision.** No plugin system. Extensions happen by writing Rust against the
-`gtk4/` and `script-vars/` crates and shipping a new `meh` build. If a user
-needs an unusual widget, they can fork meh or contribute upstream.
+### ADR-M005 — Rhai engine: one persistent instance per daemon
 
-**Consequences.** Positive: smaller surface area, no ABI commitment, simpler
-build, faster startup (no dlopen, no symbol resolution). Negative: harder for
-users to ship one-off custom widgets without forking.
+**Status:** Accepted · **Date:** 2026-05-26
 
-**Alternatives.** Rust dylib plugin API (rejected — ABI hazard, complexity).
-Lua/WASM scripting (rejected — second language, runtime cost). Mirror Ewwii’s
-rhai-based plugin API (rejected — contradicts ADR-0002).
+**Context.** Creating a new `rhai::Engine` per poll call would cost ~200 KB
+per call and re-JIT every script from scratch. The engine is heavy to construct
+but cheap to call once constructed.
 
-We can revisit this if real user demand appears. Removing a non-existent plugin
-system later is free; removing a shipped one is impossible.
+**Decision.** One `Engine` instance lives for the daemon lifetime, wrapped in
+an `Arc<Engine>`. Scripts are compiled once to AST (`Engine::compile_file` or
+`Engine::compile`) and cached in a `HashMap<PathBuf, AST>`. Hot-reload
+invalidates the AST cache for changed files. Calling a compiled script
+(`Engine::call_fn`) is the only per-tick cost: typically < 0.5 ms for
+data-fetch scripts.
 
-### ADR-0005 — System tray stays, as an opt-in feature
+**Consequences.** Positive: near-zero per-call overhead, AST cache benefits
+repeated calls. Negative: engine and all ASTs stay in RAM for daemon lifetime
+(~500 KB base + ~50 KB per unique script). Acceptable: this is less than a
+single bash fork.
 
-**Status:** Accepted · **Date:** 2026-05-22
+### ADR-M006 — Hybrid config: yuck for layout, Rhai for logic
 
-**Context.** eww users overwhelmingly want tray (issue #111). It pulls in `zbus`
-and `dbusmenu` — non-trivial dependencies a minimal build shouldn’t link.
+**Status:** Accepted · **Date:** 2026-05-26
 
-**Decision.** Keep tray. Implement as `crates/notifier-host/` ported from
-elkowar/eww (already a clean separate crate there). Gate behind a `systray`
-Cargo feature. Included in `default` and `full` profiles, excluded from
-`minimal`. When the feature is off, the yuck parser rejects `(systray …)` at
-parse time with a clear error pointing the user at the right build flag.
+**Context.** Phase 4 adds full Rhai widget definition. The question is whether
+yuck and Rhai are alternatives (pick one) or complementary (both at once).
 
-**Consequences.** Positive: minimal builds stay tiny; users who want tray get
-it with no work. Negative: a Cargo feature to maintain; the parser needs
-feature-conditional widget registration.
+**Decision.** Complementary. yuck remains the layout language — `defwindow`,
+`defwidget`, `box`, `label`, etc. Rhai handles imperative logic: computed
+values, conditional formatting, dynamic var transforms. A user can:
+- Keep pure yuck and get pure meh behaviour.
+- Add `.rhai` poll/listen sources while keeping yuck layouts.
+- Use Rhai blocks inside yuck for computed attribute expressions (Phase 4).
+- Define entire widgets in Rhai (Phase 4, optional).
 
-**Alternatives.** Always on (penalises minimal users). Always off (loses
-eww parity). External crate users link themselves (ergonomically awful).
+The principle: yuck is "what it looks like", Rhai is "what it computes".
+They do not compete; each does what it is best at.
 
-### ADR-0006 — Zero-cost when unused (prime directive, formalised)
-
-**Status:** Accepted · **Date:** 2026-05-22
-
-**Context.** The user explicitly asked: ship every feature, but make features
-free when not used. Many bars (Waybar, ironbar) link everything and start every
-subsystem regardless of config; we want the opposite.
-
-**Decision.** Three build profiles (`minimal` / `default` / `full`), every
-non-essential capability behind a Cargo feature, and every Cargo feature is
-also gated at the yuck parser level. Runtime activation is lazy: a feature
-compiled in but not referenced in yuck must spawn zero background work. Idle
-CPU target: < 0.1% with a clock + workspace minimal config.
-
-**Consequences.** Positive: minimalist users get a truly minimal binary; power
-users get everything; idle cost is enforced and measurable. Negative: every PR
-that adds a capability must think about feature gates and update the feature
-catalogue table; CI must build the three profiles to catch missing gates.
-
-**Alternatives.** Single fat binary (punishes minimal case). Plugin-only
-optional features (we said no plugins, ADR-0004). Runtime-only gating (still
-pays binary size, still has subsystem-leak risk).
-
-### ADR-0007 — Thread-local binding collector for reactive widget updates
-
-**Status:** Accepted · **Date:** 2026-05-23
-
-**Context.** When a script var updates (e.g., `TIME` from a 1s poll), meh must
-push the new value to the relevant GTK widgets.  Naïvely rebuilding the entire
-widget tree on every update costs ~2% CPU (full GTK layout pass per second).
-The `core` crate must not depend on `gtk4`, so reactive bindings (which capture
-widget references) cannot live in `EvalCtx`.
-
-**Decision.** Reactive bindings live in `crates/gtk4-impl` only.  During widget
-tree construction, a thread-local `BINDING_COLLECTOR` accumulates `Binding`
-objects (each holding a `SimplExpr`, the local variable scope, a boxed
-`FnMut(String)` setter, and the last-seen value).  `maybe_bind()` skips attrs
-whose expression has no variable references — static attrs get zero bindings.
-`LiveWindow` bundles the GTK window with its `Vec<Binding>`.  On `SetVarBatch`,
-`update_bindings()` evaluates only changed expressions and calls only the
-relevant setters — no layout passes for unchanged widgets.
-
-**Consequences.** Positive: O(bindings) per update, not O(widget-tree); setters
-only fire when the value actually changes; no GTK layout overhead for unchanged
-widgets.  Negative: widget constructors must call `maybe_bind()` for each
-bindable attribute; forgetting it means the attribute won't live-update.
-Thread-local state is non-obvious — the collector must be active (via
-`collect_bindings()`) when the widget tree is built.
-
-**Alternatives.** Rebuild widget tree on every var update (O(widgets), 2% CPU).
-Store bindings in `EvalCtx` (breaks `core` crate's no-GTK rule).  Observer
-pattern with per-widget subscriptions (more infrastructure, same end result).
-
-### ADR-0008 — Poll subprocesses gated on `windows_open`
-
-**Status:** Accepted · **Date:** 2026-05-23
-
-**Context.** `defpoll` vars run a shell command on an interval.  With no windows
-open there is nothing to display, yet the original code kept spawning subprocesses
-continuously.  Measured overhead: ~0.3–0.5% CPU from idle subprocess spawning.
-
-**Decision.** `run_poll` skips `run_shell()` when `windows_open` is false.  An
-initial value is always fetched at daemon start (so `var_state` is populated for
-the first window open).  A `tokio::sync::Notify` (`window_opened`) fires when
-the first window opens, unblocking `forward_var_updates` to flush accumulated
-initial values without waiting for the next poll tick.
-
-**Consequences.** Positive: daemon-only CPU drops from ~0.5% to ~0.17%; 
-subprocess never runs when invisible.  Negative: after a long window-close period
-the displayed value is stale by up to one poll interval on reopen (acceptable for
-TIME=1s; noticeable for DATE=60s but rare).  `listen` vars are not yet gated
-(continuous subprocess; deferred to a follow-up).
-
-**Measured CPU floor (release build, AMD Zen2, Hyprland, 60s window):**
-- Static bar (no polls): 0.17% total (0.10% user + 0.07% kernel)
-- 1s clock bar (`defpoll TIME`): 0.35% total — subprocess fork/exec costs ~0.18%
-
-The 0.1% prime directive target is achievable for static/slow-poll configs.
-A native (no-subprocess) time var source would reduce the 1s clock to ~0.17%.
-See `benches/baselines/cpu.md` for full methodology.
-
-**Alternatives.** Kill/restart poll tasks on window open/close (higher overhead
-from task lifecycle).  Always run polls and accept the cost (violates prime
-directive).  Rate-limit polls to slower intervals when no windows are open
-(partial fix, still wastes CPU).
-
-### ADR-0009 — Animations via AdwTimedAnimation, not CSS transitions
-
-**Status:** Accepted · **Date:** 2026-05-24
-
-**Context.** eww has no animation support. GTK4 CSS transitions exist but are
-fire-and-forget (can't be interrupted cleanly, no Rust API to drive programmatically).
-We want `:animate-duration` on `progress` and `:opacity` bindings.
-
-**Decision.** Use `libadwaita::TimedAnimation` with `CallbackAnimationTarget`. The
-animation drives a Rust closure (sets `fraction` or `opacity`) at each frame tick —
-zero cost when FINISHED/IDLE (frame clock callback is removed by GTK). Interruption
-is handled cleanly: incoming value pauses the running animation (at its current
-interpolated position), then starts a new animation from that position to the new
-target. `follow_enable_animations_setting(true)` on every animation respects the
-system reduced-motion preference. The entire subsystem is behind the `animations`
-Cargo feature — `libadwaita` is an optional dep; `#[cfg(not(feature = "animations"))]`
-paths use direct property setters.
-
-**Consequences.** Positive: zero idle CPU (no frame tick unless something is PLAYING);
-smooth interruption; reduced-motion respected; opt-in compilation.
-Negative: `libadwaita` added as optional dep (binds to system libadwaita ≥ 1.3);
-`adw_init()` must be called before first animation (handled via `ensure_adw_init()`
-OnceLock). `libadwaita 0.8` is required to pair with the current `gtk4-rs 0.10` in
-the workspace; upgrading gtk4-rs to 0.11 would allow libadwaita 0.9.
-
-**Alternatives.** CSS transitions (not interruptible, no Rust-side value tracking).
-Custom tick-callback (reimplements what Adwaita already does, more code, more risk).
-GStreamer animations (overkill, wrong dep). Always-on (violates prime directive).
-
-### ADR-0010 — `defsubscribe` for reactive inotify and DBus vars
-
-**Status:** Accepted · **Date:** 2026-05-24
-
-**Context.** `defpoll` and `deflisten` require a shell subprocess for every var update.
-For battery level, network state, media player info, and file-based values (e.g.,
-`/sys/class/power_supply/BAT0/capacity`), the kernel already tracks these values
-and can push notifications via inotify or DBus. A polling shell process is wasteful
-and adds latency. ADR-0008 noted: "prefer subscribe over poll whenever possible."
-
-**Decision.** Add a third yuck var form `defsubscribe` with two source types.
-`:file "/path"` watches a file via inotify (Linux `IN_MODIFY`/`IN_CREATE` events
-from the `notify` crate, behind `inotify-vars` Cargo feature). `:dbus-service …`
-subscribes to a DBus property via `org.freedesktop.DBus.Properties.PropertiesChanged`
-(behind `dbus-vars` feature, using `zbus` which was already a dep for systray).
-Subscribe vars always run once started — their idle cost is a kernel file descriptor
-(inotify) or a DBus message match rule, effectively zero CPU. They do NOT gate on
-`windows_open` because their cost is already zero; keeping them running ensures the
-first window open immediately sees the current value without a stale-by-one-interval
-problem.  The initial value is emitted at daemon start so `var_state` is pre-populated.
-
-**Consequences.** Positive: battery level, network state, and file-based values
-update with true zero latency and zero subprocess cost.  `defpoll` for these sources
-becomes unnecessary.  `inotify` and `zbus` are both already present or optional deps.
-Negative: complex DBus types (arrays, dicts, structs) return empty string — users
-should use `deflisten` with `dbus-monitor` for those.  Subscribe vars don't gate on
-`windows_open` (minor: a few bytes of data flow through the var channel while closed).
-
-**Alternatives.** Shell `deflisten` with `inotifywait` (subprocess overhead, extra
-dep on `inotify-tools`).  Native `inotify` bindings without the `notify` abstraction
-(more code, no cross-platform story if we ever add macOS).  DBus polling via `defpoll`
-(higher latency, subprocess overhead, defeats the prime directive).
+**Consequences.** Positive: existing yuck configs are fully supported at every
+phase; Rhai adoption is gradual. Negative: two languages to document; edge
+cases in the interop layer need careful design. Phase 4 design is deferred
+until Phases 1–3 are complete and the interop surface is well understood.
 
 -----
 
 ## Build profiles and Cargo features
 
-Three named profiles, all producing a working `meh`.
+Inherits meh's three profiles. Adds new features for the scripting layer.
 
-### `minimal` — “I just want a bar”
+### Profiles
 
-```bash
-cargo build --release --no-default-features --features minimal
-```
+| Profile | Command | Includes |
+|---|---|---|
+| `minimal` | `cargo build --release --no-default-features --features minimal` | Core widgets, poll/listen (shell only), no Rhai, no tray |
+| `default` | `cargo build --release` | Everything minimal + systray, subscribe vars, animations, Rhai engine, plugins |
+| `full` | `cargo build --release --features full` | Default + GL shader, experimental |
 
-Includes: core layout widgets (`box`, `centerbox`, `eventbox`, `label`,
-`button`, `image`, `revealer`), `poll` and `listen` script-vars, yuck,
-layer-shell, IPC daemon, window-level hot reload.
+### New features in meh2
 
-Excludes: tray, subscribe vars (inotify + DBus), animations, GL shader, granular hot reload,
-`jq()` expression function, `formattime()` with named timezones.
+| Feature | Adds | Idle cost when unused | Profile |
+|---|---|---|---|
+| `rhai` | `rhai-engine` crate, `rhai` dep (~1–2 MB) | Zero — engine not created unless a `.rhai` source exists in config | `default` |
+| `rhai-plugins` | `plugin-host` crate, plugin discovery | Zero — no plugin loaded unless `~/.config/meh2/plugins/` exists and has entries | `default` |
 
-**Binary footprint target: < 5 MB stripped.** (Achieved: 4.2 MiB, 2026-05-23)
-
-### `default` — what most users want
-
-```bash
-cargo build --release
-```
-
-`minimal` plus: `systray`, DBus `subscribe` vars (UPower, NetworkManager),
-`circular-progress`, `graph`, `transform`, declarative animations, granular
-hot reload, `jq()` expression function, `formattime()` with named timezones.
-
-**Binary footprint target: < 12 MB stripped.** (Achieved: 6.9 MiB, 2026-05-23)
-
-### `full` — everything
-
-```bash
-cargo build --release --features full
-```
-
-`default` plus: `(shader …)` widget with `GtkGLArea`, experimental features.
-
-### Cargo feature catalogue
-
-Every feature listed is **truly optional**. `cargo build --no-default-features`
-must succeed and produce a usable binary.
-
-|Feature          |Pulls in                                 |Idle cost when unused                        |
-|-----------------|-----------------------------------------|---------------------------------------------|
-|`systray`        |`notifier-host`, `zbus`, `quick-xml`     |Zero — no DBus until `(systray)` in config   |
-|`dbus-vars`      |`zbus`, subscription machinery           |Zero — no proxies until `defsubscribe :dbus-service …` in config |
-|`animations`     |`libadwaita` (AdwTimedAnimation)         |Zero — no tickers until a widget animates    |
-|`shader`         |`glow`, `GtkGLArea` plumbing             |Zero — no GL context until `(shader)` appears|
-|`inotify-vars`   |`notify`                                 |Zero — no watchers until `defsubscribe :file …` in config |
-|`granular-reload`|extra IR diffing                         |Negligible — slightly larger reload code     |
-|`extra-widgets`  |`circular-progress`, `graph`, `transform`|Zero unless used                             |
-|`jq`             |`jaq-core`, `jaq-parse`, `jaq-std`, `jaq-interpret`, `jaq-syn` (~2.7 MiB link) | Zero — only called when `jq(…)` expression used |
-|`tz`             |`chrono-tz` timezone database (~2.5 MiB link) | Zero — only called when `formattime(ts, fmt, tz)` used |
-
-Rules:
-
-- Every feature gate at the crate level must also gate the yuck parser
-  accepting that widget/var-type. If `systray` is off, `(systray …)` in a
-  config is a **parse-time error with a helpful message**, not a runtime panic.
-- Never add `default = ["foo"]` where `foo` adds a background task. Background
-  work comes from yuck, not from compilation.
-- `--no-default-features` must always produce a usable binary.
-
-### Verifying the prime directive
-
-Before merging anything user-visible, run `/audit-weight` (see slash commands).
-It runs the minimal build, checks `cargo bloat`, audits spawned tasks, and
-diffs the feature catalogue against `Cargo.toml`.
-
------
-
-## Coding conventions
-
-- **Edition:** Rust 2024.
-- **MSRV:** latest stable. No old-toolchain support.
-- **Async:** tokio. No blocking calls on the daemon main loop.
-- **Errors:** `anyhow` at binary boundaries; `thiserror` inside library crates.
-- **Logging:** `tracing` everywhere. No `println!` in committed code.
-- **Format:** `cargo fmt` on save (PostToolUse hook handles this).
-- **Lints:** `cargo clippy --workspace -- -D warnings` must pass before commit.
-- **Doc comments:** every public item gets one. `#![warn(missing_docs)]` on library crates.
-
-### GTK4 patterns
-
-- Use idiomatic `gtk4-rs`. Don’t translate gtk3 1:1 — many gtk3 patterns have
-  cleaner gtk4 equivalents.
-- Input → `EventController*`, not legacy signal connections where avoidable.
-- Containers → `set_child()` for single-child, `append()` for `Box`. Never
-  look for `add()` or `pack_start()`.
-- Drawing → `gtk::DrawingArea::set_draw_func`. The `draw` signal is gone.
-- CSS: target GTK4’s subset. If a gtk3 selector or property doesn’t work in
-  gtk4, document it in `docs/css-notes.md` so users know.
-
-### Dependency discipline
-
-- Don’t add a direct dependency without a one-line justification in the PR.
-- Prefer existing transitive deps over new ones.
-- Audit periodically with `cargo machete` (unused deps) and `cargo udeps`
-  (more aggressive, requires nightly).
-
------
-
-## Performance principles
-
-1. **Idle cost is the headline metric.** A clock + workspaces config sits
-   at < 0.1% CPU on modern hardware. Anything that moves this needs justification.
-1. **Lazy windowing.** A defined-but-closed window allocates nothing until opened.
-1. **Variable graph.** Re-render only widgets whose dependencies actually changed.
-1. **No re-parse on update.** Yuck compiles to an IR at load; updates mutate state.
-1. **Subscribe over poll.** Use DBus signals, inotify, netlink before `poll`.
-1. **Benchmark before claiming perf.** `criterion` for hot paths. Baseline in
-   `benches/baselines/`.
-1. **`cargo bloat` is a tool we use.** Surprising entries get investigated.
+**Rule:** `--no-default-features --features minimal` must produce a binary with
+no Rhai code linked. The `rhai` feature gates the entire `rhai-engine` crate.
 
 -----
 
 ## Roadmap
 
-**Phase 1 — Foundations** (get to feature parity with eww)
+### Phase 0 — Fork baseline (COMPLETE 2026-05-26)
 
-- [x] Fork Ewwii-sh/ewwii. Strip X11 backend.
-- [x] Pull `crates/yuck/` from elkowar/eww. Wire into Ewwii’s widget backend.
-- [x] Remove rhai. Remove StaticScript. Remove `eiipm`.
-- [x] Remove Ewwii’s plugin API (`ewwii_plugin_api` references).
-- [x] Set up the three build profiles. Confirm `minimal` < 5 MB stripped. (4.2 MiB achieved)
-- [x] CI: build all three profiles, run clippy with `-D warnings`, run benches. (`.github/workflows/ci.yml`)
-- [x] Measure idle CPU. (Static bar: 0.17%; 1s poll clock: 0.35% — see `benches/baselines/cpu.md` and ADR-0008)
-- [x] Verify every eww widget works against our yuck → IR → GTK4 pipeline.
-      Status: comprehensive test config at `examples/widget-test/` exercises
-      all widget types: label, button, box, centerbox, eventbox, image, scale,
-      progress, circular-progress, scroll, overlay, revealer, stack, expander,
-      checkbox, input, calendar, combo-box-text, color-button, literal.
-      Reactive widgets (label, scale, progress, circular-progress) wired to
-      `defpoll` vars. Interactive widgets (revealer, stack) use `meh update`.
-- [x] Port `notifier-host` crate from elkowar/eww (MIT). Gate behind `systray` feature.
-      Status: complete (2026-05-23). Full protocol implementation: Watcher, Host,
-      Item, icon resolution (name + theme-path + ARGB pixmap), proxy files.
-      GTK3 dbusmenu removed; context menus deferred to Phase 2. `build_systray()`
-      in gtk4-impl wired to `TOKIO_HANDLE`; tokio handle set by daemon at startup.
-      Right-click menus not yet implemented (Phase 2).
+- [x] Fork `~/Projects/meh` to `~/Projects/meh2`
+- [x] Rename binary `meh` → `meh2`
+- [x] Update config dir `~/.config/meh` → `~/.config/meh2`
+- [x] Update cache/log dirs `~/.cache/meh` → `~/.cache/meh2`
+- [x] Update socket/pid prefix `meh-server_` → `meh2-server_`
+- [x] Init new git repo, initial commit
+- [x] Write this CLAUDE.md
 
-**Phase 2 — Differentiators**
+meh2 at this point is a usable bar. `meh2 daemon && meh2 open bar` works
+with any config that worked with meh (point it at `~/.config/meh` via
+`meh2 --config ~/.config/meh daemon` if needed).
 
-- [x] Declarative animations via `AdwTimedAnimation`.
-      Status: complete (2026-05-24). `libadwaita 0.8` (pairs with gtk4-rs 0.10) added as
-      optional dep behind `animations` feature. Two animation sites:
-      (1) `progress` widget: `:animate-duration` (ms) + `:animate-easing` on the `value`
-          binding → smooth `AdwTimedAnimation` via `CallbackAnimationTarget` on `fraction`.
-          Interruption-safe: pauses prev anim at current fraction, starts new from there.
-      (2) Any widget: `:opacity` is now reactive (bindable) everywhere; adds smooth fade
-          when `:animate-duration` > 0 and `animations` feature is on.
-      All animations: `follow_enable_animations_setting(true)` respects system reduced-motion.
-      Zero idle cost when duration == 0 or feature is off (no frame-clock callbacks registered).
-      `ensure_adw_init()` (OnceLock) initialises libadwaita once on first animated widget.
-      `parse_adw_easing()` maps CSS-style strings to `libadwaita::Easing` variants.
-      Default easing: `ease-in-out-cubic`. Use: `(progress :value volume :animate-duration 200 :animate-easing "ease-out-cubic")`.
-- [x] Granular hot reload — change one widget, reload one widget.
-      Status: complete (2026-05-24). `granular-reload` Cargo feature in `default` profile.
-      On `meh reload`: loads new config, computes per-window IR hash (window def +
-      transitive widget deps serialised to JSON, span fields stripped), diffs against
-      old config hashes, closes+reopens only changed windows. CSS always reloaded.
-      Key files: `crates/gtk4-impl/src/app.rs` (`ir_hash`, `collect_deps`, `strip_spans`,
-      `#[cfg(feature = "granular-reload")] reload_config`). Unchanged windows keep
-      their GTK state (scroll position, focus, reactive bindings) across a reload.
-      `minimal` profile falls back to the original close-all/reopen-all path.
-- [x] Reactive multi-monitor — connect/disconnect handled live, no restart.
-      Status: complete (2026-05-24). GDK monitors ListModel `items-changed` signal
-      wired in daemon. `LiveWindow` tracks `monitor_connector`. On disconnect: window
-      closed, queued in `pending_reopen`. On reconnect: reopened at correct index.
-      `pending_reopen` cleared on `close_all` and `reload_config`.
-- [x] Fractional scaling that actually works on Hyprland and Sway.
-      Status: no code needed (2026-05-24). GTK4 4.14+ handles wp_fractional_scale_v1
-      natively. All meh sizes are in logical pixels; cairo draw contexts are
-      pre-scaled by GTK4. Verified: libgtk-4.so contains wp_fractional_scale_v1
-      symbols; Hyprland 0.55.2 supports the protocol; no GDK_SCALE override in meh.
-- [x] `subscribe` vars for DBus (`UPower`, `NetworkManager`, `MPRIS2`) and inotify.
-      Status: complete (2026-05-24). New `defsubscribe` keyword in yuck. Two sources:
-      (1) `:file "/path"` — inotify watch via `notify` crate (behind `inotify-vars` feature,
-          on by default). Reads initial value, then re-reads and emits on every
-          Modify/Create event. Zero CPU: kernel inotify fd, no polling.
-      (2) `:dbus-service … :dbus-object … :dbus-iface … :dbus-prop …` — watches a DBus
-          property via `org.freedesktop.DBus.Properties.PropertiesChanged` signal (behind
-          `dbus-vars` feature, on by default). Gets initial value via `Properties.Get`,
-          then updates reactively on signal. Handles `InvalidatedProperties` by re-reading.
-          `:dbus-bus "system"|"session"` selects the bus (default: session).
-      Both: always running (near-zero idle), initial value emitted at startup.
-      Feature catalogue updated: `inotify-vars` added to `default` profile.
-      Examples in `examples/widget-test/meh.yuck`. See ADR-0010.
+---
 
-**Phase 3 — Optional power features (complete)**
+### Phase 1 — Rhai poll/listen sources (TARGET: fully usable after this phase)
 
-- [x] `(shader …)` widget via `GtkGLArea`. Behind `shader` feature (`full` profile only).
-      Status: complete (2026-05-24). `(shader :frag "path.glsl" :width 300 :height 200)`.
-      OpenGL 3.3 core, fullscreen triangle, glow 0.17. GL function loading via
-      `eglGetProcAddress` (EGL/Wayland); links `-lEGL` via `gtk4-impl/build.rs`.
-      Available uniforms: `uniform float iTime` (seconds since realize), `uniform vec2 iResolution`.
-      Hardcoded vertex shader (fullscreen triangle); user provides fragment shader file.
-      Magenta fallback if shader file missing or compile fails.
-      Zero cost in `minimal`/`default` — glow not linked, GLArea never allocated.
-- [x] Optional `libadwaita` styling integration.
-      Status: complete (2026-05-24). `init_platform()` calls `adw::init()` at daemon
-      startup (when `animations` feature is on) so libadwaita CSS tokens
-      (`@accent_color`, `@window_bg_color`, etc.) are available in SCSS. Exposes
-      `MEH_DARK` as a reactive built-in var (string `"true"`/`"false"`) that updates
-      live when the OS switches dark/light via `adw::StyleManager` notify signal.
-      No-op in `minimal` build. Usage: `(label :text {if MEH_DARK "dark" "light"})`
-      or drive SCSS class switching. Key files: `gtk4-impl/src/app.rs`
-      (`init_platform`, `connect_color_scheme`), `daemon/src/lib.rs` (wiring).
+**Goal:** `defpoll` and `deflisten` accept `.rhai` files as their `script`
+source. Shell sources still work unchanged. The Rhai engine runs in-process:
+no fork, no subprocess. Poll latency drops from ~50–200 ms (fork+exec) to
+< 1 ms.
+
+**Deliverables:**
+
+- [ ] Add `crates/rhai-engine/` crate:
+  - `RhaiEngine` struct wrapping `rhai::Engine` + AST cache
+  - Sandbox setup per ADR-M003: no FS, no net, no subprocess
+  - `meh2` module registered: `meh2.update(var, val)`, `meh2.read_file(path)`,
+    `meh2.shell(cmd)` (explicitly allowed, logs a warning, returns stdout)
+  - Per-call timeout via `Engine::set_max_operations`
+  - `compile(path) -> AST`, `call(ast, fn_name, args) -> DynVal`
+  - Feature-gated behind `rhai` Cargo feature
+
+- [ ] Wire into `crates/script-vars/`:
+  - `ScriptVarSource` enum gains `Rhai { path: PathBuf }` variant (alongside existing `Shell`)
+  - `defpoll :script "path.rhai"` — if path ends in `.rhai`, use `RhaiEngine::call`
+  - `deflisten :script "path.rhai"` — Rhai script called on interval, emits via channel
+    (listen semantics: blocks until the script returns a new value or times out)
+  - Shell path completely unchanged; existing configs unaffected
+
+- [ ] yuck parser update:
+  - `:script` attr on `defpoll`/`deflisten` already exists — no parser change needed
+  - The routing (shell vs Rhai) is decided at runtime by file extension
+
+- [ ] Add `examples/rhai-bar/` config demonstrating:
+  - A `defpoll` using a `.rhai` file for CPU usage (reads `/proc/stat`)
+  - A `defpoll` using a `.rhai` file for RAM usage (reads `/proc/meminfo`)
+  - A `deflisten` using a `.rhai` file that watches for changes
+  - Layout in pure yuck — widgets unchanged
+
+- [ ] Performance test: compare RSS and poll latency between shell and Rhai
+  sources for the same data. Document in `benches/baselines/rhai-vs-shell.md`.
+
+- [ ] Update PKGBUILD for meh2 package name
+
+**Usability gate:** After Phase 1, a user can run meh2 with their existing
+yuck config unchanged OR migrate individual poll scripts to Rhai one at a time.
+The bar is fully functional at all times.
+
+---
+
+### Phase 2 — Rhai event handlers (TARGET: fully usable, improves interactivity)
+
+**Goal:** `:onclick`, `:onscroll`, `:onchange`, `:onhover` can reference `.rhai`
+files or inline Rhai expressions. Handlers run off the GTK main thread with a
+timeout so a slow script never blocks the UI.
+
+**Deliverables:**
+
+- [ ] `rhai-engine` gains `call_async(ast, fn_name, args)` — spawns on a
+  dedicated `tokio` thread pool, returns `JoinHandle<Result<DynVal>>`
+
+- [ ] `gtk4-impl` event handler resolution:
+  - If the handler string ends in `.rhai` → compile + call async via engine
+  - If the handler string contains `{` but no newline → treat as inline Rhai expression
+  - Otherwise → existing shell spawn (unchanged)
+
+- [ ] Timeout guard: handlers exceeding 500 ms are cancelled, error logged,
+  no panic, no GTK thread block
+
+- [ ] Inline Rhai in yuck attr values:
+  - `:onclick "{ meh2.update(\"FOO\", \"bar\"); }"` — braces signal inline Rhai
+  - Parser recognises the inline form; engine compiles it to a one-shot AST
+
+- [ ] Add `examples/rhai-bar/` popups using Rhai onclick handlers
+
+**Usability gate:** After Phase 2, complex multi-step click handlers (update
+multiple vars, conditional logic, write a file) can be written in Rhai instead
+of bash. Shell onclick still works. Fully backward compatible.
+
+---
+
+### Phase 3 — Rhai plugin system
+
+**Goal:** Users can drop a plugin directory into `~/.config/meh2/plugins/` and
+it contributes new data sources (vars) to the bar. Plugins are pure Rhai —
+no compilation, no binary. The user references plugin-provided vars in their
+yuck config like any other var.
+
+**Deliverables:**
+
+- [ ] Add `crates/plugin-host/` crate:
+  - Discover plugin dirs from `~/.config/meh2/plugins/` and
+    `~/.local/share/meh2/plugins/`
+  - Parse `plugin.toml` manifest: name, version, declared vars (name, type,
+    interval or listen), file-access allowlist
+  - Load `main.rhai`, compile to AST, register declared vars into daemon's var graph
+  - On each tick: call `fn get_<var_name>() -> String` in the plugin's Rhai scope
+  - Plugin errors are isolated: one broken plugin does not crash the daemon
+
+- [ ] Plugin manifest format (`plugin.toml`):
+  ```toml
+  name = "weather"
+  version = "0.1.0"
+  author = "someone"
+
+  [[vars]]
+  name = "WEATHER_TEMP"
+  type = "poll"
+  interval = 300  # seconds
+
+  [[vars]]
+  name = "WEATHER_STATUS"
+  type = "poll"
+  interval = 300
+
+  [permissions]
+  read_files = []          # no file access needed
+  allow_shell = false      # no subprocess
+  ```
+
+- [ ] Hot reload: `meh2 reload` re-discovers plugins, recompiles changed ASTs,
+  updates var graph without daemon restart
+
+- [ ] Add `examples/plugin-demo/` with a sample weather plugin and a sample
+  system-stats plugin written entirely in Rhai
+
+- [ ] Document plugin authoring in `docs/plugins.md`
+
+**Usability gate:** After Phase 3, community plugins are possible. A user
+installs a plugin by cloning a directory — no compilation, no `sudo`.
+
+---
+
+### Phase 4 — Full Rhai widget config (long-term)
+
+**Goal:** Widget trees can be defined in Rhai alongside yuck. This is the most
+complex phase — it requires exposing GTK widget construction to Rhai. Design
+is deferred until Phase 3 is complete and the interop surface is understood.
+
+**High-level plan (subject to revision):**
+
+- [ ] `rhai-engine` gains a `WidgetBuilder` API:
+  - `meh2.label(text)`, `meh2.box(children)`, `meh2.button(text, onclick)`, etc.
+  - Returns an IR `Element` (the same type `gtk4-impl` uses from yuck compilation)
+  - Does not call GTK directly — produces the IR, daemon renders it
+
+- [ ] yuck `(rhai-widget :src "path.rhai" :fn "build_widget")` —
+  a new yuck widget that calls a Rhai function, gets an IR Element back,
+  and renders it as a child
+
+- [ ] Reactive Rhai widgets: if the Rhai function references a `defpoll` var,
+  the widget re-calls the function on var update (same binding system as yuck)
+
+- [ ] `defwidget`-compatible Rhai: a plugin can register a widget type by
+  exporting `fn render(attrs) -> Element` — usable as `(plugin-widget-name …)`
+  in yuck
+
+**Note:** Phase 4 is intentionally underspecified. The design emerges from
+experience with Phases 1–3. Do not start Phase 4 without completing Phase 3
+and writing an ADR for the interop design.
+
+---
+
+### Phase 5 — Hybrid yuck+Rhai (long-term, post Phase 4)
+
+**Goal:** Rhai expressions usable inline inside yuck attribute values beyond
+what SimplExpr currently supports. Computed layout (e.g. `(for …)` blocks
+driven by Rhai arrays). Bidirectional: yuck can call Rhai functions; Rhai can
+reference yuck defwidgets.
+
+**Design is deferred.** Start this only after Phase 4 ships and real usage
+patterns emerge.
+
+-----
+
+## Coding conventions
+
+Inherits all conventions from meh's CLAUDE.md. Additions:
+
+- **Rhai API surface is minimal.** Every function registered on the `meh2`
+  module needs a justification. Don't expose things "just in case".
+- **Rhai errors are never panics.** All `Engine::call*` results are `match`ed;
+  errors are logged with `tracing::error!` and a fallback/last-good-value
+  returned. The daemon must never crash due to a script error.
+- **Plugin isolation is non-negotiable.** One plugin's error must not affect
+  other plugins or the daemon. Wrap every plugin call in `catch_unwind` +
+  the engine's own error handling.
+- **Measure before claiming perf.** Every Rhai vs shell comparison needs a
+  number in `benches/baselines/`.
+
+-----
+
+## Performance principles
+
+Same as meh, plus:
+
+- **Rhai engine is lazy-init.** `RhaiEngine` is created only when the first
+  `.rhai` source appears in a loaded config. Static yuck-only configs: zero
+  Rhai overhead, same as meh.
+- **AST cache is the hot path.** `compile()` is called once per file per
+  hot-reload cycle. `call()` is called every poll tick and must stay < 1 ms
+  for data-fetch scripts.
+- **Plugin load is startup-only.** Plugin discovery, manifest parsing, and
+  AST compilation happen once at daemon start (and on `meh2 reload`). No
+  per-tick plugin discovery.
+- **Timeout is non-negotiable.** A Rhai script that loops forever must not
+  stall the daemon. The 500 ms operation limit is enforced by the engine
+  itself; no spawned thread needed for the limit.
 
 -----
 
 ## Rules for Claude Code
 
-These are the rules **you** follow when working in this repo.
-
-- **Read this file top-to-bottom at the start of every session.** Confirm you
-  have before taking action.
-- **The prime directive (zero-cost when unused) is non-negotiable.** Before
-  adding any new capability, answer in your reply:
-  - What Cargo feature gates this? (If “none”, you need a strong reason.)
-  - Which build profile (`minimal` / `default` / `full`) does it belong to?
-  - What is its idle cost when compiled in but not active in yuck? (Goal: zero.)
-  - What changes in the feature catalogue table? Update it in the same change.
-- **Default to proposing, not patching.** For non-trivial changes, sketch the
-  approach first and wait for confirmation.
-- **Cite upstream when porting.** When copying or adapting code from
-  `eww-upstream`, `eww-gtk4-branch`, or `ewwii-upstream`, put the source path
-  and commit hash in the commit message.
-- **Watch the redraw budget.** If you’re touching widget rendering, ask
-  yourself whether this adds work to a hot path. Say so in the PR.
-- **No new dependency without flagging it.** Justify each in the PR.
-- **If you find yourself writing X11 / rhai / gtk3 / plugin-loader code, STOP**
-  and ask. These are all explicitly out of scope.
-- **Prefer subscribe over poll.** Every time.
-- **ADRs are append-only.** Add a new ADR when you make a decision that isn’t
-  already documented. Never edit accepted ADRs in place; supersede them.
-- **When unsure between two reasonable approaches, ask.** Don’t pick silently.
-- **Continuity matters.** I am the user from the “Background” section. Same
-  person, same preferences, same scope rules.
+- **Read this file top-to-bottom at the start of every session.**
+- **The prime directive is non-negotiable.** Zero overhead when Rhai is unused.
+- **meh is read-only.** Never modify `~/Projects/meh`. Cherry-pick only.
+- **Rhai errors are never panics.** All script errors are caught and logged.
+- **ADRs are append-only.** Add a new ADR when making a design decision.
+- **No native plugins.** If someone asks for `.so` plugin support, the answer is no.
+- **No X11 / GTK3 / other scripting languages.** Stop and ask if a task implies them.
+- **Measure perf before claiming improvement.** Every Phase 1/2 change touching
+  poll latency or RSS needs a number.
+- **Phases are sequential.** Do not start Phase 2 work until Phase 1 is shippable.
+  Do not start Phase 3 until Phase 2 is shippable. "Shippable" = the binary builds,
+  existing yuck configs work, new feature works in the example config.
+- **After Phase 1 and Phase 2: meh2 must be fully usable as a daily bar.**
+  No half-finished states that break the bar. Feature flags ensure this.
+- **When unsure between two approaches, ask.** Don't pick silently.
 
 -----
 
-## Getting started — step by step
-
-When the user first opens Claude Code in this repo (or starts working on a
-fresh checkout), do this in order:
-
-1. **Read this file in full.** Then summarise in 5 bullets what meh is, what’s
-   in scope, and what the prime directive means.
-1. **Check the upstream clones exist** at `../eww-upstream`, `../eww-gtk4-branch`,
-   `../ewwii-upstream`. If any is missing, print the `git clone` command and stop.
-1. **Inspect Ewwii’s structure.** `view ../ewwii-upstream/crates/` to understand
-   what we’re forking. Note the rhai-touching files (those go away).
-1. **Inspect eww’s yuck crate.** `view ../eww-upstream/crates/yuck/` to confirm
-   it’s standalone (no GTK deps). Note its `Cargo.toml`.
-1. **Propose Phase 1 step 1** as a concrete PR: a `Cargo.toml` workspace
-   layout and an initial directory skeleton matching the [Architecture](#architecture)
-   section. Don’t write any non-trivial Rust until I confirm the layout.
-
-Do **not** start writing widget code, daemon code, or anything beyond
-configuration files in this first pass. The shape comes first.
-
------
-
-## Claude Code setup
-
-### Launch command
-
-From `~/projects/meh/`:
+## Getting started — building meh2
 
 ```bash
-claude --model opus --effort high \
-  --add-dir ../eww-upstream \
-  --add-dir ../eww-gtk4-branch \
-  --add-dir ../ewwii-upstream
+cd ~/Projects/meh2
+cargo build --release
+sudo install -m755 target/release/meh2 /usr/bin/meh2
+mkdir -p ~/.config/meh2
+# Copy your meh config or create a new one:
+# cp -r ~/.config/meh/* ~/.config/meh2/
+meh2 daemon &
+meh2 open bar
 ```
 
-### `.claude/settings.json`
+To run alongside meh (both at once):
+```bash
+# meh runs on ~/.config/meh — unchanged
+meh daemon &
+meh open bar
 
-Create this file with:
-
-```json
-{
-  "model": "claude-opus-4-7",
-  "permissions": {
-    "allowedTools": [
-      "Read", "Write", "Edit",
-      "Bash(cargo *)", "Bash(rustup *)", "Bash(git *)",
-      "Bash(rg *)", "Bash(fd *)", "Bash(find *)"
-    ],
-    "deny": [
-      "Read(./.env)", "Read(./.env.*)", "Write(./Cargo.lock)"
-    ]
-  },
-  "hooks": {
-    "PostToolUse": [
-      { "matcher": "Write(*.rs)", "hooks": [{ "type": "command", "command": "cargo fmt --quiet" }] },
-      { "matcher": "Edit(*.rs)",  "hooks": [{ "type": "command", "command": "cargo fmt --quiet" }] }
-    ]
-  }
-}
+# meh2 runs on ~/.config/meh2 — separate socket, separate config
+meh2 daemon &
+meh2 open bar
 ```
 
-### Recommended plugins (install inside Claude Code)
-
-**1. Rust LSP — essential.** Gives Claude rust-analyzer diagnostics on every
-edit. Eliminates “let me run cargo check” round-trips.
-
-```
-/plugin marketplace add Piebald-AI/claude-code-lsps
-/plugin install rust-lsp
-```
-
-Alternative with cargo-bloat / cargo-udeps / cargo-audit / cargo-deny bundled
-— better fit for meh because we genuinely care about binary size and clean deps:
-
-```
-/plugin marketplace add zircote/rust-lsp
-/plugin install rust-lsp
-```
-
-**2. Skip the all-in-one packs.** Don’t install full-stack skill bundles or
-multi-language packs. They pollute context with irrelevant languages.
-
-### MCP servers worth considering
-
-- **GitHub MCP** so Claude can read issues from elkowar/eww and Ewwii-sh/ewwii
-  directly, follow upstream releases, and create PRs in your fork without copy-paste.
-
-### Slash commands to create
-
-Put each in `.claude/commands/<name>.md`. They become `/<name>` in the REPL.
-
-`port-widget.md`:
-
-```
-Port the GTK3 widget $ARGUMENTS from elkowar/eww (../eww-upstream/) to our
-GTK4 codebase. Follow patterns already in crates/gtk4/. Map gtk3 signals to
-gtk4 EventControllers. Replace add()/pack_start() with set_child()/append().
-Cite the upstream file path and commit hash in the commit message.
-```
-
-`yuck-bind.md`:
-
-```
-Add the yuck parser binding for the widget $ARGUMENTS. Update the widget
-registry in crates/core/, generate attribute parsing in crates/yuck/, add
-a sample config under examples/ and a test under tests/.
-```
-
-`audit-weight.md`:
-
-```
-Audit the codebase against the prime directive (ADR-0006). Report on:
-
-1. Does `cargo build --release --no-default-features --features minimal` succeed?
-2. `cargo bloat --release --crates -n 20` on the minimal build. Flag any
-   crate over 500 KB that isn't core (gtk4, glib, tokio, anyhow, yuck).
-3. Any dep in `[dependencies]` that should be in `[features]` instead — i.e.
-   anything pulled in unconditionally but only used by an optional widget/var.
-4. Every `tokio::spawn` and `glib::spawn_future` call: confirm there's a path
-   where it doesn't run when the relevant yuck construct is absent.
-5. Diff the feature catalogue table in CLAUDE.md against `[features]` in
-   the workspace `Cargo.toml`. Flag drift.
-
-Produce a markdown report. Do not change code.
-```
-
-`bench.md`:
-
-```
-Run `cargo bench --workspace`. Compare against the baseline in
-benches/baselines/main.json. Flag regressions over 5%. For improvements,
-ask before updating the baseline.
-```
-
-`sync-upstream.md`:
-
-```
-Check Ewwii-sh/ewwii main for new commits since our last sync (see
-.upstream-sync). Identify patches relevant to us — skip X11, rhai,
-plugin-API, generic refactors. Propose which to cherry-pick. Don't apply
-yet; wait for confirmation.
-```
-
-`adr.md`:
-
-```
-Add a new ADR to CLAUDE.md under "Architecture decisions". Use the next
-free ADR number. Topic: $ARGUMENTS. Required sections: Context, Decision,
-Consequences (positive and negative), Alternatives. Append only — never
-edit existing ADRs.
-```
-
------
-
-## First-session prompt
-
-Paste this into Claude Code on your first session:
-
-> Read CLAUDE.md top-to-bottom. Summarise in 5 bullets what meh is, what’s in
-> scope, what’s out of scope, what the prime directive means, and what the
-> first concrete steps are. Then check that ../eww-upstream, ../eww-gtk4-branch
-> and ../ewwii-upstream exist. Don’t write any code yet.
-
-If Claude’s summary is right, you’re good. If it invents something, fix this
-file before continuing.
+The IPC sockets are derived from a hash of the config directory path, so
+`meh` and `meh2` never conflict even if they use the same config dir.
