@@ -268,6 +268,30 @@ async fn run_subscribe(
 
 // ── inotify implementation ────────────────────────────────────────────────────
 
+/// Expand a leading `~/` or bare `~` to the user's home directory.
+/// `~username` forms are left unchanged (uncommon, not needed here).
+#[cfg(feature = "inotify-vars")]
+fn expand_tilde(path: &str) -> std::path::PathBuf {
+    if path == "~" {
+        return std::env::var("HOME")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| std::path::PathBuf::from(path));
+    }
+    if let Some(rest) = path.strip_prefix("~/") {
+        if let Ok(home) = std::env::var("HOME") {
+            return std::path::PathBuf::from(home).join(rest);
+        }
+    }
+    std::path::PathBuf::from(path)
+}
+
+/// Two-phase watcher state:
+/// - `File`   — watching the target file directly (normal case)
+/// - `Parent` — target doesn't exist yet; watching the parent dir for creation
+#[cfg(feature = "inotify-vars")]
+#[derive(Clone, Copy, PartialEq)]
+enum WatchState { File, Parent }
+
 #[cfg(feature = "inotify-vars")]
 async fn run_subscribe_file(
     def: SubscribeScriptVar,
@@ -277,58 +301,93 @@ async fn run_subscribe_file(
     use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
     use yuck::config::script_var_definition::SubscribeSource;
 
-    let SubscribeSource::File { path } = &def.source else {
-        unreachable!()
-    };
-    let path = std::path::PathBuf::from(path);
-
-    // Read and emit the current file contents on startup.
-    if let Ok(contents) = tokio::fs::read_to_string(&path).await {
-        let _ = tx.send((def.name.clone(), DynVal::from_string(contents.trim_end().to_string())));
-    }
+    let SubscribeSource::File { path } = &def.source else { unreachable!() };
+    let path = expand_tilde(path);
 
     // Bridge notify's sync callback into an async channel.
     let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel::<notify::Result<notify::Event>>();
     let mut watcher = RecommendedWatcher::new(
-        move |res| {
-            let _ = event_tx.send(res);
+        {
+            let event_tx = event_tx.clone();
+            move |res| { let _ = event_tx.send(res); }
         },
         Config::default(),
     )?;
-    watcher.watch(&path, RecursiveMode::NonRecursive)?;
+
+    // Determine initial watch state. The :initial value is already emitted by
+    // run_subscribe() before this function is called, so we only need to emit
+    // the live file content when the file actually exists.
+    let mut state = if path.exists() {
+        watcher.watch(&path, RecursiveMode::NonRecursive)?;
+        emit_file_contents(&def.name, &path, &tx).await;
+        WatchState::File
+    } else {
+        watch_parent_dir(&mut watcher, &path)?;
+        WatchState::Parent
+    };
 
     loop {
         tokio::select! {
             _ = shutdown.recv() => break,
-            evt = event_rx.recv() => {
-                let evt = match evt {
-                    Some(Ok(e)) => e,
-                    Some(Err(e)) => {
-                        tracing::warn!("inotify error for `{}`: {e}", def.name);
-                        continue;
-                    }
-                    None => break,
+            msg = event_rx.recv() => {
+                let evt = match msg {
+                    Some(Ok(e))  => e,
+                    Some(Err(e)) => { tracing::warn!("inotify error `{}`: {e}", def.name); continue; }
+                    None         => break,
                 };
-                // Emit on any write/create/rename event.
-                let relevant = matches!(
-                    evt.kind,
-                    EventKind::Modify(_) | EventKind::Create(_) | EventKind::Access(_)
-                );
-                if relevant {
-                    match tokio::fs::read_to_string(&path).await {
-                        Ok(contents) => {
-                            let _ = tx.send((
-                                def.name.clone(),
-                                DynVal::from_string(contents.trim_end().to_string()),
-                            ));
-                        }
-                        Err(e) => tracing::warn!("read `{}`: {e}", path.display()),
+
+                if !matches!(evt.kind, EventKind::Modify(_) | EventKind::Create(_)) {
+                    continue;
+                }
+
+                // While watching the parent dir, check if our file just appeared.
+                if state == WatchState::Parent
+                    && evt.paths.iter().any(|p| p == &path)
+                    && path.exists()
+                {
+                    // Transition: unwatch parent, watch file.
+                    if let Some(parent) = path.parent() { let _ = watcher.unwatch(parent); }
+                    match watcher.watch(&path, RecursiveMode::NonRecursive) {
+                        Ok(())   => state = WatchState::File,
+                        Err(e)   => tracing::warn!("subscribe `{}`: re-watch after create: {e}", def.name),
                     }
                 }
+
+                emit_file_contents(&def.name, &path, &tx).await;
             }
         }
     }
     Ok(())
+}
+
+/// Watch the parent directory of `path` so we get notified when `path` is created.
+/// Logs a warning (non-fatal) if the parent itself doesn't exist.
+#[cfg(feature = "inotify-vars")]
+fn watch_parent_dir(watcher: &mut impl notify::Watcher, path: &std::path::Path) -> Result<()> {
+    let parent = path.parent().unwrap_or(std::path::Path::new("."));
+    if !parent.exists() {
+        tracing::warn!(
+            "defsubscribe :file `{}` — parent dir `{}` does not exist; \
+             var will remain at :initial until it is created",
+            path.display(),
+            parent.display(),
+        );
+        return Ok(());
+    }
+    watcher.watch(parent, notify::RecursiveMode::NonRecursive)?;
+    Ok(())
+}
+
+#[cfg(feature = "inotify-vars")]
+async fn emit_file_contents(
+    name:  &eww_shared_util::VarName,
+    path:  &std::path::Path,
+    tx:    &UnboundedSender<VarUpdate>,
+) {
+    match tokio::fs::read_to_string(path).await {
+        Ok(s)  => { let _ = tx.send((name.clone(), DynVal::from_string(s.trim_end().to_string()))); }
+        Err(e) => tracing::warn!("defsubscribe :file read `{}`: {e}", path.display()),
+    }
 }
 
 // ── DBus implementation ───────────────────────────────────────────────────────
