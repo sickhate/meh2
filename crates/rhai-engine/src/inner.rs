@@ -104,6 +104,28 @@ impl RhaiEngine {
             std::path::Path::new(path).exists()
         });
 
+        // write_cache(key, value) → bool — writes value to ~/.cache/meh2/<key>.
+        // Key is restricted to [a-zA-Z0-9_-] to prevent path traversal.
+        // Returns true on success, false on error (error is logged).
+        engine.register_fn("write_cache", |key: &str, value: &str| -> bool {
+            if !key.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-') {
+                tracing::warn!("rhai write_cache: invalid key {:?}, must match [a-zA-Z0-9_-]", key);
+                return false;
+            }
+            let dir = match std::env::var("HOME") {
+                Ok(h) => std::path::PathBuf::from(h).join(".cache/meh2"),
+                Err(_) => { tracing::warn!("rhai write_cache: HOME not set"); return false; }
+            };
+            if let Err(e) = std::fs::create_dir_all(&dir) {
+                tracing::warn!("rhai write_cache: mkdir {}: {}", dir.display(), e);
+                return false;
+            }
+            match std::fs::write(dir.join(key), value) {
+                Ok(()) => true,
+                Err(e) => { tracing::warn!("rhai write_cache({key}): {e}"); false }
+            }
+        });
+
         Arc::new(Self {
             engine,
             cache: Mutex::new(HashMap::new()),

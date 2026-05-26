@@ -68,6 +68,7 @@ allow_shell = false
 | `vars[].initial` | no | Initial value before first tick. Default: `""` |
 | `permissions.read_files` | no | File paths the script reads (informational) |
 | `permissions.allow_shell` | no | Whether the script calls `run_shell()` (informational) |
+| `permissions.write_cache` | no | Whether the script calls `write_cache()` (informational) |
 
 ## Writing the Rhai script (`main.rhai`)
 
@@ -93,6 +94,7 @@ The full meh2 Rhai API is available in plugins:
 | Function | Returns | Description |
 |---|---|---|
 | `read_file(path)` | string | Read and trim a file. `""` if not found. |
+| `write_cache(key, val)` | bool | Write `val` to `~/.cache/meh2/<key>`. Key must be `[a-zA-Z0-9_-]`. |
 | `run_shell(cmd)` | string | Run `sh -c cmd`, return stdout. |
 | `parse_int(s)` | i64 | Parse string to integer, 0 on failure. |
 | `parse_float(s)` | f64 | Parse string to float, 0.0 on failure. |
@@ -111,17 +113,19 @@ The full meh2 Rhai API is available in plugins:
 ### Persisting state between ticks
 
 Rhai functions have no persistent state between calls. To track a delta (e.g.
-CPU usage), write to a cache file and read it back on the next tick:
+CPU usage), use `write_cache(key, value)` to persist between ticks:
 
 ```rhai
 fn get_PLUGIN_CPU() {
-    let cache = env_var("HOME") + "/.cache/meh2/my_plugin_state";
-    let prev  = read_file(cache);
+    let prev = read_file(env_var("HOME") + "/.cache/meh2/my_cpu_state");
     // ... compute new value from prev ...
-    run_shell("printf '" + new_state + "' > " + cache);
+    write_cache("my_cpu_state", new_state);  // no shell fork needed
     result
 }
 ```
+
+`write_cache(key, val)` writes to `~/.cache/meh2/<key>`. The key is restricted
+to `[a-zA-Z0-9_-]` to prevent path traversal. Use `read_file` to read it back.
 
 ## Hot reload
 

@@ -20,6 +20,7 @@
 
 ### Rhai API surface (crates/rhai-engine/src/inner.rs)
 - `read_file(path)` → string (silent empty on NotFound, warn on other errors)
+- `write_cache(key, value)` → bool (writes to `~/.cache/meh2/<key>`; key must be `[a-zA-Z0-9_-]`)
 - `run_shell(cmd)` → string (stdout, logged)
 - `parse_int(s)` → i64
 - `parse_float(s)` → f64

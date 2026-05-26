@@ -38,4 +38,8 @@ pub struct Permissions {
     /// Whether the plugin may call `run_shell()`. Not yet enforced.
     #[serde(default)]
     pub allow_shell: bool,
+    /// Whether the plugin may call `write_cache()`. Informational only —
+    /// write_cache() is always sandboxed to ~/.cache/meh2/.
+    #[serde(default)]
+    pub write_cache: bool,
 }

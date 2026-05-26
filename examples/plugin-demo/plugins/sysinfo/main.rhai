@@ -31,7 +31,6 @@ fn read_cpu_fields() {
 }
 
 fn get_PLUGIN_CPU() {
-    let prev_file = env_var("HOME") + "/.cache/meh2/plugin_sysinfo_cpu_prev";
     let cur = read_cpu_fields();
     if cur.len() < 4 {
         return "?%";
@@ -41,7 +40,7 @@ fn get_PLUGIN_CPU() {
     let total_now = 0;
     for v in cur { total_now += v; }
 
-    let prev_raw = read_file(prev_file);
+    let prev_raw = read_file(env_var("HOME") + "/.cache/meh2/plugin_sysinfo_cpu_prev");
     let parts    = prev_raw.split(",");
     let result   = "0%";
 
@@ -56,8 +55,7 @@ fn get_PLUGIN_CPU() {
         }
     }
 
-    // Persist current values for next tick (run_shell writes the file).
-    run_shell("mkdir -p " + env_var("HOME") + "/.cache/meh2 && printf '" + idle_now + "," + total_now + "' > " + prev_file);
+    write_cache("plugin_sysinfo_cpu_prev", idle_now + "," + total_now);
     result
 }
 

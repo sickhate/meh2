@@ -18,3 +18,4 @@ initial  = "0 MB"
 [permissions]
 read_files  = ["/proc/stat", "/proc/meminfo"]
 allow_shell = false
+write_cache = true
