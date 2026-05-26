@@ -1,10 +1,10 @@
 # Maintainer: sickhate <syckin@icloud.com>
-pkgname=meh
-pkgver=0.1.0.r14.a1833bf
+pkgname=meh2
+pkgver=0.1.0.r0.0000000
 pkgrel=1
-pkgdesc="GTK4 Wayland-only widget system and status bar (eww fork)"
+pkgdesc="GTK4 Wayland widget system with Rhai scripting (meh2 fork of meh/eww)"
 arch=('x86_64')
-url="https://github.com/sickhate/meh"
+url="https://github.com/sickhate/meh2"
 license=('GPL-3.0-or-later')
 depends=(
     'gtk4'
@@ -16,7 +16,7 @@ depends=(
 )
 makedepends=('rust' 'cargo')
 options=('!debug')
-source=("${pkgname}::git+file://${HOME}/Projects/meh")
+source=("${pkgname}::git+file://${HOME}/Projects/meh2")
 sha256sums=('SKIP')
 
 prepare() {
@@ -40,7 +40,7 @@ check() {
 
 package() {
     cd "$srcdir/$pkgname"
-    install -Dm755 "target/release/meh" "$pkgdir/usr/bin/meh"
+    install -Dm755 "target/release/meh2" "$pkgdir/usr/bin/meh2"
     install -Dm644 "CLAUDE.md" "$pkgdir/usr/share/doc/$pkgname/README.md"
     install -Dm644 "Cargo.toml" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }

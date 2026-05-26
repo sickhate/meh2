@@ -360,8 +360,8 @@ no fork, no subprocess. Poll latency drops from ~50–200 ms (fork+exec) to
   - Hostname from `rhai:` inline
   - Onclick handler via `scripts/greet.rhai` (return value run as shell cmd)
 
-- [ ] Performance comparison doc `benches/baselines/rhai-vs-shell.md`
-- [ ] Update PKGBUILD for meh2 package name
+- [x] Performance comparison doc `benches/baselines/rhai-vs-shell.md`
+- [x] Update PKGBUILD for meh2 package name
 
 **Usability gate:** Phase 1 complete and usable. Existing yuck configs work unchanged.
 
