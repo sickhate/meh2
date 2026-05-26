@@ -108,12 +108,36 @@ pub fn start_plugins(
 
     let script_paths_for_watch: Vec<PathBuf> = plugins.iter().map(|p| p.script.clone()).collect();
 
+    // Build the widget registry from all discovered plugins before spawning tasks.
+    let mut widget_registry: std::collections::HashMap<String, meh_rhai_engine::RhaiWidgetDef> =
+        std::collections::HashMap::new();
+
+    for plugin in &plugins {
+        for w in &plugin.manifest.widgets {
+            if widget_registry.contains_key(&w.name) {
+                tracing::warn!(
+                    "plugin-host: widget `{}` declared by `{}` conflicts with an earlier plugin — skipping",
+                    w.name,
+                    plugin.manifest.name,
+                );
+                continue;
+            }
+            tracing::info!("plugin-host: registered widget `{}` from `{}`", w.name, plugin.manifest.name);
+            widget_registry.insert(w.name.clone(), meh_rhai_engine::RhaiWidgetDef {
+                script_path:   plugin.script.clone(),
+                fn_name:       w.fn_name.clone(),
+                default_watch: w.default_watch.clone(),
+            });
+        }
+    }
+
+    meh_rhai_engine::init_widget_registry(widget_registry);
+
     for plugin in plugins {
         for var_decl in &plugin.manifest.vars {
             if var_decl.kind != VarKind::Poll {
-                // Only poll vars are supported in Phase 3.
                 tracing::warn!(
-                    "plugin-host: {}: var {} has unsupported type, skipping",
+                    "plugin-host: {}: var {} has unsupported kind, skipping",
                     plugin.manifest.name,
                     var_decl.name
                 );

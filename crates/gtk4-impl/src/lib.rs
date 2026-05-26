@@ -281,6 +281,10 @@ fn build_basic(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::Widget> {
             { bail!("`rhai-widget` requires the `rhai` feature") }
         }
         unknown => {
+            #[cfg(feature = "rhai")]
+            if let Some(def) = meh_rhai_engine::get_widget_def(unknown) {
+                return rhai_widget::build_rhai_defwidget(wu, def, ctx);
+            }
             bail!("Unknown widget: `{}`. Is it defined with `defwidget`?", unknown)
         }
     };

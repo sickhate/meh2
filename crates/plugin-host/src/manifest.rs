@@ -8,9 +8,29 @@ pub struct PluginManifest {
     pub description: Option<String>,
     #[serde(default)]
     pub vars: Vec<VarDecl>,
+    /// Widgets this plugin contributes. Each becomes usable as `(widget-name ...)`
+    /// in any yuck config once the plugin is loaded.
+    #[serde(default)]
+    pub widgets: Vec<WidgetDecl>,
     #[serde(default)]
     pub permissions: Permissions,
 }
+
+/// A widget type exported by a plugin.
+#[derive(serde::Deserialize, Debug, Clone)]
+pub struct WidgetDecl {
+    /// Widget name as it will appear in yuck, e.g. `"sysinfo-pill"`.
+    pub name: String,
+    /// Rhai function to call. Defaults to `"render"` if not specified.
+    #[serde(default = "default_render_fn")]
+    pub fn_name: String,
+    /// Vars to watch by default when `:watch` is not provided at the call site.
+    /// The user can always override via `:watch "VAR1 VAR2"` in yuck.
+    #[serde(default)]
+    pub default_watch: Vec<String>,
+}
+
+fn default_render_fn() -> String { "render".to_string() }
 
 #[derive(serde::Deserialize, Debug, Clone)]
 pub struct VarDecl {
