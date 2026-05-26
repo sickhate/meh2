@@ -62,15 +62,16 @@ impl RhaiEngine {
 
         // ── API surface ───────────────────────────────────────────────────────
 
-        // read_file(path) → string — reads and trims a file.
+        // read_file(path) → string — reads and trims a file. Returns "" if not found.
         engine.register_fn("read_file", |path: &str| -> String {
-            std::fs::read_to_string(path)
-                .unwrap_or_else(|e| {
+            match std::fs::read_to_string(path) {
+                Ok(s) => s.trim_end().to_string(),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+                Err(e) => {
                     tracing::warn!("rhai read_file({path}): {e}");
                     String::new()
-                })
-                .trim_end()
-                .to_string()
+                }
+            }
         });
 
         // run_shell(cmd) → string — stdout of `sh -c cmd`.

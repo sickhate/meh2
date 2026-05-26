@@ -1,8 +1,32 @@
 # Changelog
 
-All notable changes to meh are documented here.
+All notable changes to meh2 are documented here.
 
 ## [Unreleased]
+
+### Added (meh2 — Rhai engine)
+- **Rhai scripting engine** (`crates/rhai-engine/`) — in-process poll/listen sources, no fork
+- **Rhai event handlers** — `:onclick`/`:onscroll`/`:onhover` accept `.rhai` or `rhai:` inline
+- **Rhai API**: `read_file()`, `run_shell()`, `parse_int()`, `parse_float()`, `env_var()`, `path_exists()`
+- **`read_file()` silent on NotFound** — returns `""` instead of warning for missing state files
+- **AST cache** — scripts compiled once per hot-reload cycle; per-tick cost < 1 ms
+- **`examples/rhai-bar/`** — demo bar using Rhai for CPU, RAM, time, onclick handler
+- **Performance baselines** (`benches/baselines/`) — measured fork+exec ~1.3–1.8 ms vs Rhai ~0.2 ms for `/proc` reads
+- **Real config migration** — `~/.config/meh2/` fully migrated from meh; all paths, IPC calls, toggle scripts updated
+- **`getSysStats.rhai`** — replaces Python `getSysStats` script; CPU/RAM/temp from `/proc`+`/sys`, disk via `df`
+- **meh2 as default bar** — `~/.local/share/bar_choice = meh2`; `bar-launch.sh` and `bar-switch` scripts updated
+
+### Performance (bar open, all polls active, 2026-05-26)
+- meh2: ~331 MB RSS, ~10% CPU (GTK4 rendering dominates)
+- meh:  ~321 MB RSS, ~9%  CPU (baseline)
+- Rhai engine overhead: ~10 MB RSS, ~1% CPU
+- getSysStats: Python startup eliminated (~80 ms/3s tick saved); CPU/RAM now pure `/proc` reads
+
+### Known Rhai quirks (see CLAUDE.md for full guide)
+- `string.trim()` / `string.replace()` are in-place, return `()` — never assign their result
+- Template strings `` `${var}` `` work in `.rhai` files; use `+` concatenation inside yuck strings
+
+## [Unreleased — meh upstream]
 
 ### Added
 - **`(launcher)` attr `:terminal`** — when set (e.g. `:terminal "foot"`), PATH

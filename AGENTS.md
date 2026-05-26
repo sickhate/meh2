@@ -13,6 +13,23 @@
 **Phase 0 (fork baseline) complete.**
 **Phase 1 complete.** Rhai engine wired into `defpoll`/`deflisten`. `.rhai` files and `rhai:` inline sources work.
 **Phase 2 complete.** Rhai event handlers: `:onclick`/`:onscroll`/`:onhover` etc. accept `.rhai` files and `rhai:` inline.
+**Real config migrated.** `~/.config/meh2/` is a full migration of the user's meh bar with Rhai replacements for high-frequency polls.
+**meh2 is the active daily bar.** Running as default via `~/.local/share/bar_choice = meh2`. Selectable via bar-switch scripts.
+
+### Rhai API surface (crates/rhai-engine/src/inner.rs)
+- `read_file(path)` → string (silent empty on NotFound, warn on other errors)
+- `run_shell(cmd)` → string (stdout, logged)
+- `parse_int(s)` → i64
+- `parse_float(s)` → f64
+- `env_var(name)` → string
+- `path_exists(path)` → bool
+
+### Known Rhai gotchas (IMPORTANT — read before writing scripts)
+- `string.trim()` and `string.replace(from, to)` are **in-place** in Rhai — they modify the string and return `()`, NOT the trimmed/replaced value. Never do `let x = str.trim()`.
+- `read_file()` already trims trailing whitespace — no `.trim()` needed on its result.
+- To parse `/proc` files: use `split(" ")` + `parse_int(tok)` to find the first positive integer. Do NOT use `replace()`.
+- String concatenation: use `+` operator. Template strings `` `${var}` `` work in `.rhai` files but NOT inside yuck strings (yuck parser intercepts `${}`).
+- Inline `rhai:` in yuck: use `+` for path building (`h + "/.local/share/..."`) not template strings.
 
 Feature flag: `rhai` (in `default` and `full` profiles; excluded from `minimal`).
 New crate: `crates/rhai-engine/`. Example: `examples/rhai-bar/`.
@@ -362,6 +379,9 @@ no fork, no subprocess. Poll latency drops from ~50–200 ms (fork+exec) to
 
 - [x] Performance comparison doc `benches/baselines/rhai-vs-shell.md`
 - [x] Update PKGBUILD for meh2 package name
+
+- [x] Real config migrated (`~/.config/meh2/`) — all shell script paths, IPC calls, toggle scripts updated to meh2
+- [x] getSysStats Python → `scripts/getSysStats.rhai` (eliminates Python startup per tick)
 
 **Usability gate:** Phase 1 complete and usable. Existing yuck configs work unchanged.
 

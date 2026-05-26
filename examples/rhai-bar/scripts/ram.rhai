@@ -1,18 +1,22 @@
 // RAM usage percentage — reads /proc/meminfo directly, no subprocess.
+// Uses split+parse_int instead of replace()/trim() (Rhai: in-place, return ()).
 
-let raw = read_file("/proc/meminfo");
+let raw      = read_file("/proc/meminfo");
 let total_kb = 0;
 let avail_kb = 0;
 
 for line in raw.split("\n") {
-    let trimmed = line.trim();
-    if trimmed.starts_with("MemTotal:") {
-        let val = trimmed.replace("MemTotal:", "").trim().split(" ")[0].trim();
-        total_kb = parse_int(val);
+    if line.starts_with("MemTotal:") {
+        for tok in line.split(" ") {
+            let n = parse_int(tok);
+            if n > 0 { total_kb = n; break; }
+        }
     }
-    if trimmed.starts_with("MemAvailable:") {
-        let val = trimmed.replace("MemAvailable:", "").trim().split(" ")[0].trim();
-        avail_kb = parse_int(val);
+    if line.starts_with("MemAvailable:") {
+        for tok in line.split(" ") {
+            let n = parse_int(tok);
+            if n > 0 { avail_kb = n; break; }
+        }
     }
 }
 
