@@ -20,6 +20,32 @@
 **Real config migrated.** `~/.config/meh2/` is a full migration of the user's meh bar with Rhai replacements for high-frequency polls.
 **meh2 is the active daily bar.** Running as default via `~/.local/share/bar_choice = meh2`. Selectable via bar-switch scripts.
 
+### Script conversion status (`~/.config/meh2/scripts/`)
+All high-frequency bar poll scripts have been converted from bash/Python to `.rhai`.
+Python has been eliminated entirely from the poll path.
+
+| Script | Source | Interval | Notes |
+|---|---|---|---|
+| `getSysStats.rhai` | `/proc` direct | 3s | CPU, RAM, temp, disk — no subprocess |
+| `getDiscord.rhai` | `hyprctl clients -j` + json_decode | 2s | Replaces bash+Python |
+| `getWhatsapp.rhai` | `hyprctl clients -j` + json_decode | 2s | Replaces bash+Python; handles multiple title formats |
+| `getIrc.rhai` | pgrep | 3s | Replaces bash+Python |
+| `getMail.rhai` | pgrep | 5s | Replaces bash |
+| `getSpotify.rhai` | playerctl + write_cache | 2s | Replaces bash; state file in ~/.cache/meh2/ |
+| `getVolume.rhai` | wpctl (1 call, not 2) | 2s | Replaces bash; single call extracts vol+mute |
+| `bluetooth.rhai` | bluetoothctl | 3s | Replaces bash poll (toggle still via bt-toggle.sh) |
+| `getIphone.rhai` | ideviceinfo | 5s | Replaces bash+inline Python; battery icons in Rhai |
+| `getNcmpcpp.rhai` | hyprctl json_decode + mpc | 2s | Replaces bash+Python |
+| `getAethertune.rhai` | hyprctl json_decode + read_file | 3s | Replaces bash+jq |
+| `getHeadphones.rhai` | bluetoothctl (1 call/device) | 5s | Replaces bash |
+| `getTorrra.rhai` | pgrep | 5s | Replaces bash |
+| `getOpencine.rhai` | pgrep | 5s | Replaces bash |
+| `getPulsemixer.rhai` | pgrep | 2s | Replaces bash |
+| **Still bash** | | | |
+| `network` | nmcli + /proc/net | 1s | Too complex; nmcli subprocess dominates anyway |
+| `getProtonVPN` | protonvpn status | 10s | `timeout 4` call; no benefit from Rhai wrapper |
+| `getWallpapers` | magick thumbnails | 30s | Python magick calls; subprocess-bound |
+
 ### Rhai API surface (crates/rhai-engine/src/inner.rs)
 - `read_file(path)` → string (silent empty on NotFound, warn on other errors)
 - `read_or(path, default)` → string (like `read_file` but returns `default` if the file is missing or empty)
