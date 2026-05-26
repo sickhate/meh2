@@ -116,9 +116,10 @@ impl RhaiEngine {
         // json_decode(json_str) → Dynamic — parse a JSON string into a Rhai value.
         // Objects become maps (#{...}), arrays become arrays, primitives their
         // Rhai equivalents. Returns an empty map on parse error (error is logged).
+        // json_decode supports both objects AND arrays by going through serde_json.
         engine.register_fn("json_decode", |json: &str| -> rhai::Dynamic {
-            match rhai::Engine::new().parse_json(json, true) {
-                Ok(map) => rhai::Dynamic::from_map(map),
+            match serde_json::from_str::<serde_json::Value>(json) {
+                Ok(val) => serde_json_to_rhai(&val),
                 Err(e)  => {
                     tracing::warn!("rhai json_decode: {e}");
                     rhai::Dynamic::from_map(rhai::Map::new())
@@ -363,6 +364,36 @@ fn dynamic_to_string(v: Dynamic) -> String {
         "bool"    => v.cast::<bool>().to_string(),
         "()"      => String::new(),
         _         => v.to_string(),
+    }
+}
+
+/// Recursively convert a `serde_json::Value` to a Rhai `Dynamic` for `json_decode`.
+fn serde_json_to_rhai(val: &serde_json::Value) -> rhai::Dynamic {
+    use serde_json::Value;
+    match val {
+        Value::Object(map) => {
+            let rhai_map: rhai::Map = map
+                .iter()
+                .map(|(k, v)| (k.as_str().into(), serde_json_to_rhai(v)))
+                .collect();
+            rhai::Dynamic::from_map(rhai_map)
+        }
+        Value::Array(arr) => {
+            let rhai_arr: rhai::Array = arr.iter().map(serde_json_to_rhai).collect();
+            rhai::Dynamic::from_array(rhai_arr)
+        }
+        Value::String(s) => rhai::Dynamic::from(s.clone()),
+        Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                rhai::Dynamic::from(i)
+            } else if let Some(f) = n.as_f64() {
+                rhai::Dynamic::from(f)
+            } else {
+                rhai::Dynamic::from(n.to_string())
+            }
+        }
+        Value::Bool(b)  => rhai::Dynamic::from(*b),
+        Value::Null     => rhai::Dynamic::UNIT,
     }
 }
 
