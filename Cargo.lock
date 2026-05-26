@@ -1957,6 +1957,7 @@ dependencies = [
  "anyhow",
  "eww_shared_util",
  "meh_rhai_engine",
+ "notify",
  "once_cell",
  "serde",
  "simplexpr",

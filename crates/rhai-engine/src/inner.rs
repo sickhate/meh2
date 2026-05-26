@@ -205,6 +205,16 @@ impl RhaiEngine {
         }
     }
 
+    /// Clear the entire AST cache so all scripts are recompiled on the next call.
+    /// Call this on `meh2 reload` to pick up changes to any Rhai script.
+    pub fn invalidate_all(&self) {
+        if let Ok(mut c) = self.cache.lock() {
+            let n = c.len();
+            c.clear();
+            tracing::debug!("rhai-engine: cleared {} cached AST(s)", n);
+        }
+    }
+
     // ── Internals ─────────────────────────────────────────────────────────────
 
     fn get_or_compile(&self, path: &PathBuf) -> Result<AST> {

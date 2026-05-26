@@ -340,8 +340,12 @@ async fn dispatch_cmd(
         }
 
         IpcCmd::Reload => {
-            // Invalidate plugin AST cache before the GTK reload so the first
-            // poll tick after reload compiles fresh scripts from disk.
+            // Invalidate all Rhai AST caches before the GTK reload so the next
+            // call to any script (defpoll, rhai-widget, plugin) recompiles from disk.
+            #[cfg(feature = "rhai")]
+            if let Some(engine) = meh_rhai_engine::global() {
+                engine.invalidate_all();
+            }
             #[cfg(feature = "rhai-plugins")]
             meh_plugin_host::invalidate_all();
 

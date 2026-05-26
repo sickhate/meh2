@@ -48,6 +48,7 @@ impl RhaiEngine {
         anyhow::bail!("meh2 built without `rhai` feature")
     }
     pub fn invalidate(&self, _path: &std::path::Path) {}
+    pub fn invalidate_all(&self) {}
 }
 
 // ── Real implementation ───────────────────────────────────────────────────────
