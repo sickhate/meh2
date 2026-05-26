@@ -35,6 +35,11 @@ pub fn start_all(
 ) -> tokio::sync::mpsc::UnboundedReceiver<VarUpdate> {
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<VarUpdate>();
 
+    // Initialise the Rhai engine once here so it is ready before any poll/listen
+    // task starts. No-op when the `rhai` feature is disabled.
+    #[cfg(feature = "rhai")]
+    meh_rhai_engine::init();
+
     // Kill any orphaned subprocesses left by a previous daemon run (e.g. after
     // SIGKILL or crash). Scans /proc for processes whose cmdline contains the
     // config scripts directory — those can only be our deflisten children.
@@ -98,7 +103,7 @@ async fn run_poll(
     };
 
     // Always fetch an initial value to populate var_state before any window opens.
-    if let Ok(out) = run_shell(&cmd, &config_dir).await {
+    if let Ok(out) = run_source(&cmd, &config_dir).await {
         let _ = tx.send((def.name.clone(), DynVal::from_string(out)));
     }
 
@@ -112,7 +117,7 @@ async fn run_poll(
                 if !windows_open.load(Ordering::Relaxed) {
                     continue;
                 }
-                match run_shell(&cmd, &config_dir).await {
+                match run_source(&cmd, &config_dir).await {
                     Ok(out) => { let _ = tx.send((def.name.clone(), DynVal::from_string(out))); }
                     Err(e)  => tracing::warn!("poll var `{}` error: {}", def.name, e),
                 }
@@ -136,7 +141,25 @@ async fn run_listen(
 
     let _ = tx.send((def.name.clone(), def.initial_value.clone()));
 
-    // Listen vars run for the lifetime of the daemon — no window gating.
+    // Rhai listen: poll-style loop — call the script on each tick and emit
+    // the return value. Not true streaming, but sufficient for data sources
+    // that don't need line-by-line output.
+    if is_rhai_source(&def.command) {
+        let mut timer = tokio::time::interval(std::time::Duration::from_secs(1));
+        loop {
+            tokio::select! {
+                _ = shutdown.recv() => return,
+                _ = timer.tick() => {
+                    match run_rhai(&def.command, &config_dir) {
+                        Ok(out) => { let _ = tx.send((def.name.clone(), DynVal::from_string(out))); }
+                        Err(e)  => tracing::warn!("listen var `{}` rhai error: {}", def.name, e),
+                    }
+                }
+            }
+        }
+    }
+
+    // Shell listen: long-running subprocess, emit each output line as a value.
     // Killing and restarting on every window open/close causes subprocess
     // accumulation; the subprocess is already cheap to keep alive.
     loop {
@@ -479,6 +502,46 @@ fn kill_group(child: &mut tokio::process::Child) {
     if let Some(pid) = child.id() {
         let pgid = nix::unistd::Pid::from_raw(pid as i32);
         let _ = nix::sys::signal::killpg(pgid, nix::sys::signal::Signal::SIGTERM);
+    }
+}
+
+/// Route to Rhai or shell based on the source string.
+async fn run_source(cmd: &str, config_dir: &std::path::Path) -> Result<String> {
+    if is_rhai_source(cmd) {
+        tokio::task::spawn_blocking({
+            let cmd = cmd.to_owned();
+            let dir = config_dir.to_path_buf();
+            move || run_rhai(&cmd, &dir)
+        })
+        .await?
+    } else {
+        run_shell(cmd, config_dir).await
+    }
+}
+
+/// True when the source string refers to a Rhai script (`.rhai` extension or `rhai:` prefix).
+fn is_rhai_source(cmd: &str) -> bool {
+    let s = cmd.trim();
+    s.ends_with(".rhai") || s.starts_with("rhai:")
+}
+
+/// Execute a Rhai source synchronously (call from `spawn_blocking`).
+fn run_rhai(cmd: &str, config_dir: &std::path::Path) -> Result<String> {
+    #[cfg(feature = "rhai")]
+    {
+        let engine = meh_rhai_engine::global()
+            .ok_or_else(|| anyhow::anyhow!("rhai engine not initialised"))?;
+        let s = cmd.trim();
+        if let Some(inline) = s.strip_prefix("rhai:") {
+            engine.eval_inline(inline.trim())
+        } else {
+            engine.eval_file(std::path::Path::new(s), config_dir)
+        }
+    }
+    #[cfg(not(feature = "rhai"))]
+    {
+        let _ = (cmd, config_dir);
+        anyhow::bail!("meh2 built without `rhai` feature")
     }
 }
 

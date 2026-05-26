@@ -117,6 +117,7 @@ pub fn run(paths: MehPaths, daemonize: bool) -> Result<()> {
                 .build()
                 .expect("tokio runtime");
             meh_gtk4::set_tokio_handle(rt.handle().clone());
+    meh_gtk4::set_config_dir(config_dir.clone());
             rt.block_on(async move {
                 let ipc = tokio::spawn(run_ipc_server(socket, cmd_tx2.clone()));
                 let sig = tokio::spawn({

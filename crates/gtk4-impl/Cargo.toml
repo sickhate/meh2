@@ -11,9 +11,11 @@ extra-widgets = []
 shader = ["dep:glow"]
 granular-reload = []
 jq = ["yuck/jq", "simplexpr/jq"]
+rhai = ["dep:meh_rhai_engine", "meh_rhai_engine/rhai"]
 
 [dependencies]
 meh_core          = { workspace = true }
+meh_rhai_engine   = { workspace = true, optional = true }
 meh_layer_shell   = { workspace = true }
 meh_notifier_host = { workspace = true, optional = true }
 zbus              = { workspace = true, optional = true }

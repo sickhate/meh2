@@ -1,0 +1,57 @@
+;;;; rhai-bar — example config demonstrating Rhai poll sources and event handlers.
+;;;;
+;;;; Run with:
+;;;;   meh2 --config ~/Projects/meh2/examples/rhai-bar daemon
+;;;;   meh2 --config ~/Projects/meh2/examples/rhai-bar open rhai-bar
+
+;; ── Variables ──────────────────────────────────────────────────────────────────
+
+;; Time via a Rhai script (instead of bash)
+(defpoll RHAI_TIME :interval "5s"
+  :script "scripts/time.rhai")
+
+;; CPU usage — two /proc/stat samples in Rhai, no subprocess
+(defpoll RHAI_CPU :interval "2s"
+  :script "scripts/cpu.rhai")
+
+;; RAM stats returned as JSON, parsed with jq() expression
+(defpoll RHAI_RAM_JSON :interval "5s"
+  :script "scripts/ram.rhai")
+
+;; Inline Rhai — no script file needed for simple expressions
+(defpoll RHAI_HOSTNAME :interval "60s"
+  :script "rhai: run_shell(\"hostname\")")
+
+;; Var updated by an onclick Rhai handler
+(defvar GREET_MSG "click the button")
+
+;; ── Widgets ────────────────────────────────────────────────────────────────────
+
+(defwidget rhai-bar []
+  (centerbox :orientation "h"
+    ;; Left: hostname from inline Rhai
+    (box :halign "start" :spacing 8
+      (label :text "󰒋 ${RHAI_HOSTNAME}" :class "module"))
+
+    ;; Center: clock from Rhai script
+    (box :halign "center"
+      (label :text " ${RHAI_TIME}" :class "module clock"))
+
+    ;; Right: CPU + RAM + greeting button
+    (box :halign "end" :spacing 8
+      (label :text "󰻠 ${RHAI_CPU}%" :class "module")
+      (label :text "󰍛 ${jq(RHAI_RAM_JSON, \".pct\")}%" :class "module")
+      ;; Onclick handler is a Rhai script — return value runs as shell command
+      (button :class "module"
+              :onclick "scripts/greet.rhai"
+        (label :text "󰤛 ${GREET_MSG}")))))
+
+;; ── Window ─────────────────────────────────────────────────────────────────────
+
+(defwindow rhai-bar
+  :monitor 0
+  :geometry (geometry :x "0" :y "0" :width "100%" :height "36px"
+               :anchor "top center")
+  :layer "top"
+  :exclusive true
+  (rhai-bar))

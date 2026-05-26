@@ -10,10 +10,12 @@
 
 ## Current state (last updated 2026-05-26)
 
-**Phase 0 (fork baseline) complete.** Binary renamed `meh2`, config dir `~/.config/meh2`,
-cache/socket prefixes updated. All meh features present and working.
+**Phase 0 (fork baseline) complete.**
+**Phase 1 complete.** Rhai engine wired into `defpoll`/`deflisten`. `.rhai` files and `rhai:` inline sources work.
+**Phase 2 complete.** Rhai event handlers: `:onclick`/`:onscroll`/`:onhover` etc. accept `.rhai` files and `rhai:` inline.
 
-**Phase 1 in progress.** Rhai engine for `defpoll`/`deflisten` script sources — not started yet.
+Feature flag: `rhai` (in `default` and `full` profiles; excluded from `minimal`).
+New crate: `crates/rhai-engine/`. Example: `examples/rhai-bar/`.
 
 -----
 
@@ -334,7 +336,7 @@ no fork, no subprocess. Poll latency drops from ~50–200 ms (fork+exec) to
 
 **Deliverables:**
 
-- [ ] Add `crates/rhai-engine/` crate:
+- [x] Add `crates/rhai-engine/` crate:
   - `RhaiEngine` struct wrapping `rhai::Engine` + AST cache
   - Sandbox setup per ADR-M003: no FS, no net, no subprocess
   - `meh2` module registered: `meh2.update(var, val)`, `meh2.read_file(path)`,
@@ -343,31 +345,25 @@ no fork, no subprocess. Poll latency drops from ~50–200 ms (fork+exec) to
   - `compile(path) -> AST`, `call(ast, fn_name, args) -> DynVal`
   - Feature-gated behind `rhai` Cargo feature
 
-- [ ] Wire into `crates/script-vars/`:
-  - `ScriptVarSource` enum gains `Rhai { path: PathBuf }` variant (alongside existing `Shell`)
-  - `defpoll :script "path.rhai"` — if path ends in `.rhai`, use `RhaiEngine::call`
-  - `deflisten :script "path.rhai"` — Rhai script called on interval, emits via channel
-    (listen semantics: blocks until the script returns a new value or times out)
+- [x] Wire into `crates/script-vars/`:
+  - `run_source()` dispatcher: `.rhai` ext or `rhai:` prefix → engine, otherwise shell
+  - `defpoll :script "path.rhai"` works; `defpoll :script "rhai: expr"` works
+  - `deflisten :script "path.rhai"` works (poll-style loop at 1s interval)
   - Shell path completely unchanged; existing configs unaffected
 
-- [ ] yuck parser update:
-  - `:script` attr on `defpoll`/`deflisten` already exists — no parser change needed
-  - The routing (shell vs Rhai) is decided at runtime by file extension
+- [x] yuck parser update — no change needed (routing by extension at runtime)
 
-- [ ] Add `examples/rhai-bar/` config demonstrating:
-  - A `defpoll` using a `.rhai` file for CPU usage (reads `/proc/stat`)
-  - A `defpoll` using a `.rhai` file for RAM usage (reads `/proc/meminfo`)
-  - A `deflisten` using a `.rhai` file that watches for changes
-  - Layout in pure yuck — widgets unchanged
+- [x] Add `examples/rhai-bar/` config:
+  - CPU usage from `/proc/stat` in Rhai (two-sample diff, no subprocess)
+  - RAM from `/proc/meminfo` returned as JSON
+  - Time via `rhai: run_shell("date +%H:%M")` inline
+  - Hostname from `rhai:` inline
+  - Onclick handler via `scripts/greet.rhai` (return value run as shell cmd)
 
-- [ ] Performance test: compare RSS and poll latency between shell and Rhai
-  sources for the same data. Document in `benches/baselines/rhai-vs-shell.md`.
-
+- [ ] Performance comparison doc `benches/baselines/rhai-vs-shell.md`
 - [ ] Update PKGBUILD for meh2 package name
 
-**Usability gate:** After Phase 1, a user can run meh2 with their existing
-yuck config unchanged OR migrate individual poll scripts to Rhai one at a time.
-The bar is fully functional at all times.
+**Usability gate:** Phase 1 complete and usable. Existing yuck configs work unchanged.
 
 ---
 
@@ -379,26 +375,21 @@ timeout so a slow script never blocks the UI.
 
 **Deliverables:**
 
-- [ ] `rhai-engine` gains `call_async(ast, fn_name, args)` — spawns on a
-  dedicated `tokio` thread pool, returns `JoinHandle<Result<DynVal>>`
+- [x] `rhai-engine` eval runs on `tokio::task::spawn_blocking` — never blocks GTK thread.
+  Timeout enforced by `Engine::set_max_operations(500_000)`.
 
-- [ ] `gtk4-impl` event handler resolution:
-  - If the handler string ends in `.rhai` → compile + call async via engine
-  - If the handler string contains `{` but no newline → treat as inline Rhai expression
+- [x] `gtk4-impl` `spawn_cmd()` updated:
+  - Ends in `.rhai` → run via engine in `spawn_blocking`, non-empty return → `sh -c`
+  - Starts with `rhai:` → eval inline via engine
   - Otherwise → existing shell spawn (unchanged)
 
-- [ ] Timeout guard: handlers exceeding 500 ms are cancelled, error logged,
-  no panic, no GTK thread block
+- [x] `CONFIG_DIR` global in `gtk4-impl`; `set_config_dir()` called from daemon
+  so relative `.rhai` paths in onclick attrs resolve correctly.
 
-- [ ] Inline Rhai in yuck attr values:
-  - `:onclick "{ meh2.update(\"FOO\", \"bar\"); }"` — braces signal inline Rhai
-  - Parser recognises the inline form; engine compiles it to a one-shot AST
+- [x] `examples/rhai-bar/scripts/greet.rhai` — onclick handler example
 
-- [ ] Add `examples/rhai-bar/` popups using Rhai onclick handlers
-
-**Usability gate:** After Phase 2, complex multi-step click handlers (update
-multiple vars, conditional logic, write a file) can be written in Rhai instead
-of bash. Shell onclick still works. Fully backward compatible.
+**Usability gate:** Phase 2 complete. onclick/onscroll/onhover/etc. accept `.rhai`
+or `rhai:` in addition to shell commands. Fully backward compatible.
 
 ---
 

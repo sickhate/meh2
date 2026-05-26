@@ -18,6 +18,7 @@ resolver = "2"
 [workspace.dependencies]
 # Internal crates
 meh_core          = { path = "crates/core",         version = "0.1.0" }
+meh_rhai_engine   = { path = "crates/rhai-engine",  version = "0.1.0" }
 meh_gtk4          = { path = "crates/gtk4-impl",    version = "0.1.0" }
 meh_layer_shell   = { path = "crates/layer-shell",  version = "0.1.0" }
 meh_script_vars   = { path = "crates/script-vars",  version = "0.1.0" }
@@ -98,6 +99,9 @@ zbus = { version = "3.15.2", default-features = false, features = ["tokio"] }
 
 # OpenGL (shader feature)
 glow = "0.17"
+
+# Rhai scripting engine (rhai feature)
+rhai = { version = "1", features = ["sync"] }
 
 # Dev / test
 insta             = "1.7"

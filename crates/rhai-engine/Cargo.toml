@@ -1,0 +1,15 @@
+[package]
+name    = "meh_rhai_engine"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+
+[features]
+default = []
+rhai    = ["dep:rhai"]
+
+[dependencies]
+rhai      = { workspace = true, optional = true }
+anyhow    = { workspace = true }
+tracing   = { workspace = true }
+once_cell = { workspace = true }

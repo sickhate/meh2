@@ -1,0 +1,28 @@
+* {
+  font-family: "JetBrainsMono Nerd Font", monospace;
+  font-size: 13px;
+}
+
+window {
+  background: rgba(20, 20, 30, 0.92);
+  color: #cdd6f4;
+}
+
+.module {
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.06);
+}
+
+.module.clock {
+  font-weight: bold;
+  color: #89b4fa;
+}
+
+button.module {
+  border: none;
+  color: #a6e3a1;
+}
+button.module:hover {
+  background: rgba(166, 227, 161, 0.15);
+}
