@@ -15,6 +15,8 @@
 **Phase 2 complete.** Rhai event handlers: `:onclick`/`:onscroll`/`:onhover` etc. accept `.rhai` files and `rhai:` inline.
 **Phase 3 complete.** Rhai plugin system. Drop a directory into `~/.config/meh2/plugins/`, daemon picks it up at start.
 **Phase 4 complete.** `(rhai-widget :src "f.rhai" :fn "fn" :watch "VARS")` — Rhai functions return map-based widget trees, rendered live. See ADR-M007.
+**Phase 4.5 complete.** Plugin-registered defwidgets — plugins declare `[[widgets]]` in `plugin.toml`; those names work directly in yuck as `(my-widget :attr "val" :watch "VARS")`. Call-site attrs injected into Rhai scope alongside watched vars. See ADR-M008.
+**`defsubscribe :file` complete.** inotify-backed file watching. Two-phase watcher handles missing files/parent dirs. Tilde paths expanded. Replaces polling for flag toggles.
 **Real config migrated.** `~/.config/meh2/` is a full migration of the user's meh bar with Rhai replacements for high-frequency polls.
 **meh2 is the active daily bar.** Running as default via `~/.local/share/bar_choice = meh2`. Selectable via bar-switch scripts.
 
@@ -342,6 +344,34 @@ They do not compete; each does what it is best at.
 phase; Rhai adoption is gradual. Negative: two languages to document; edge
 cases in the interop layer need careful design. Phase 4 design is deferred
 until Phases 1–3 are complete and the interop surface is well understood.
+
+### ADR-M008 — Plugin-registered defwidgets use WIDGET_REGISTRY, not yuck defwidget
+
+**Status:** Accepted · **Date:** 2026-05-26
+
+**Context.** Phase 3 plugins can export vars. Phase 4 adds `(rhai-widget ...)`.
+The natural next step is plugins exporting reusable widget types that yuck
+configs can call as `(my-widget :attr "val")` without `:src` and `:fn` noise.
+Two options:
+1. **Inject `defwidget` at parse time** — plugin discovery rewrites the yuck
+   AST to add a `defwidget` for each declared widget before evaluation.
+2. **Out-of-band registry** — plugin-host populates a static `WIDGET_REGISTRY`
+   at startup; `build_basic()` checks it for unknown widget names.
+
+**Decision.** Out-of-band registry (option 2).
+- Zero yuck parser changes — no AST rewriting, no new parse-time deps.
+- `WIDGET_REGISTRY` is an `OnceCell<HashMap<String, RhaiWidgetDef>>` in
+  `rhai-engine/src/lib.rs` — the one crate both `plugin-host` (writes) and
+  `gtk4-impl` (reads) already depend on. No new crate edges.
+- Lookup happens in `build_basic()` after the user-defined `defwidget` check
+  and before the "unknown widget" bail. Gated on `#[cfg(feature = "rhai")]`.
+- Call-site attrs are evaluated once at build time and stored as `static_attrs`
+  in `RhaiWidgetBinding`; merged with watched-var values on every rebuild.
+
+**Consequences.** Positive: minimal footprint, no parser risk, works with any
+existing yuck config. Negative: plugin widgets don't appear in the yuck AST for
+diagnostics; a typo in a widget name gives "unknown widget" rather than a
+plugin-aware error message — acceptable since the error is the same as before.
 
 -----
 
