@@ -10,6 +10,16 @@
 //! workspace level. The stub type is always present so dependents compile
 //! without conditional imports.
 
+/// Rhai-free widget tree produced by `call_fn_as_widget_data`.
+/// Converted to `WidgetUse` in `gtk4-impl` for rendering.
+#[derive(Debug, Clone)]
+pub struct RhaiWidgetData {
+    pub widget_type: String,
+    /// Attribute key-value pairs (both serialised as strings).
+    pub attrs:    Vec<(String, String)>,
+    pub children: Vec<RhaiWidgetData>,
+}
+
 // ── Stub (rhai feature disabled) ─────────────────────────────────────────────
 
 #[cfg(not(feature = "rhai"))]
@@ -32,6 +42,9 @@ impl RhaiEngine {
         anyhow::bail!("meh2 built without `rhai` feature")
     }
     pub fn call_fn(&self, _path: &std::path::Path, _config_dir: &std::path::Path, _fn_name: &str) -> anyhow::Result<String> {
+        anyhow::bail!("meh2 built without `rhai` feature")
+    }
+    pub fn call_fn_as_widget_data(&self, _path: &std::path::Path, _config_dir: &std::path::Path, _fn_name: &str) -> anyhow::Result<crate::RhaiWidgetData> {
         anyhow::bail!("meh2 built without `rhai` feature")
     }
     pub fn invalidate(&self, _path: &std::path::Path) {}

@@ -1,0 +1,47 @@
+; GPL-3.0-or-later
+; rhai-widget demo — exercises the (rhai-widget) widget.
+;
+; Launch: meh2 daemon && meh2 open rhai-demo
+;
+; Requires the `rhai` feature (included in the default build profile).
+; The :watch attribute lists vars that trigger widget rebuilds; changes to
+; other vars do NOT cause a rebuild.
+
+; ── Vars ─────────────────────────────────────────────────────────────────────
+
+(defpoll CPU :interval "2s" "cat $HOME/.cache/meh2/cpu_percent 2>/dev/null || echo 0")
+(defpoll MEM :interval "5s" "cat $HOME/.cache/meh2/mem_mb 2>/dev/null || echo 0")
+(defpoll BAT :interval "30s" "cat /sys/class/power_supply/BAT0/capacity 2>/dev/null || echo -")
+
+; ── Demo window ──────────────────────────────────────────────────────────────
+
+(defwindow rhai-demo
+    :monitor 0
+    :geometry (geometry
+        :width  "400px"
+        :height "200px"
+        :x "80px"
+        :y "40px"
+        :anchor "top left")
+    :stacking "overlay"
+    :focusable false
+    (rhai-demo-root))
+
+(defwidget rhai-demo-root []
+    (box :orientation "v" :spacing 12 :class "container"
+
+        ; ── Static greeting (no :watch — never rebuilds after initial build) ──
+        (box :orientation "v" :spacing 4 :class "section"
+            (label :text "static (no :watch)" :class "section-title" :halign "start")
+            (rhai-widget :src "main.rhai" :fn "greeting"))
+
+        ; ── Status bar — rebuilds whenever CPU or MEM changes ─────────────────
+        (box :orientation "v" :spacing 4 :class "section"
+            (label :text "status bar (:watch CPU MEM)" :class "section-title" :halign "start")
+            (rhai-widget :src "main.rhai" :fn "status_bar" :watch "CPU MEM"))
+
+        ; ── Battery — rebuilds whenever BAT changes ───────────────────────────
+        (box :orientation "v" :spacing 4 :class "section"
+            (label :text "battery (:watch BAT)" :class "section-title" :halign "start")
+            (rhai-widget :src "main.rhai" :fn "battery_widget" :watch "BAT"))
+    ))

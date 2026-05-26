@@ -1,0 +1,57 @@
+* {
+    font-family: "JetBrains Mono", "Monospace", monospace;
+    font-size: 13px;
+    all: unset;
+}
+
+.container {
+    background: #1e1e2e;
+    color: #cdd6f4;
+    padding: 16px;
+}
+
+.section {
+    background: #181825;
+    border-radius: 8px;
+    padding: 10px 14px;
+    border: 1px solid #313244;
+}
+
+.section-title {
+    color: #cba6f7;
+    font-weight: bold;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 4px;
+}
+
+.rhai-greeting {
+    color: #a6e3a1;
+    font-weight: bold;
+}
+
+.rhai-status {
+    color: #cdd6f4;
+}
+
+.rhai-cpu {
+    color: #89b4fa;
+}
+
+.rhai-mem {
+    color: #cba6f7;
+}
+
+.rhai-bat {
+    color: #a6e3a1;
+}
+
+.rhai-bat-low {
+    color: #f38ba8;
+    font-weight: bold;
+}
+
+.rhai-bat-absent {
+    color: #585b70;
+}

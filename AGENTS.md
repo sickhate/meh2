@@ -14,6 +14,7 @@
 **Phase 1 complete.** Rhai engine wired into `defpoll`/`deflisten`. `.rhai` files and `rhai:` inline sources work.
 **Phase 2 complete.** Rhai event handlers: `:onclick`/`:onscroll`/`:onhover` etc. accept `.rhai` files and `rhai:` inline.
 **Phase 3 complete.** Rhai plugin system. Drop a directory into `~/.config/meh2/plugins/`, daemon picks it up at start.
+**Phase 4 complete.** `(rhai-widget :src "f.rhai" :fn "fn" :watch "VARS")` — Rhai functions return map-based widget trees, rendered live. See ADR-M007.
 **Real config migrated.** `~/.config/meh2/` is a full migration of the user's meh bar with Rhai replacements for high-frequency polls.
 **meh2 is the active daily bar.** Running as default via `~/.local/share/bar_choice = meh2`. Selectable via bar-switch scripts.
 
@@ -278,6 +279,44 @@ repeated calls. Negative: engine and all ASTs stay in RAM for daemon lifetime
 (~500 KB base + ~50 KB per unique script). Acceptable: this is less than a
 single bash fork.
 
+### ADR-M007 — rhai-widget uses Map-based IR, not builder API or yuck strings
+
+**Status:** Accepted · **Date:** 2026-05-26
+
+**Context.** Phase 4 adds `(rhai-widget ...)`. Three options for how Rhai
+produces widget trees:
+1. **Yuck string** — function returns a yuck s-expression string; daemon parses it.
+2. **Map-based IR** — function returns `#{ type: "box", children: [...] }`.
+3. **Builder API** — `meh2.label(text)`, `meh2.box(children)` registered functions.
+
+**Decision.** Map-based IR (option 2).
+
+- Zero new registered Rhai types — uses built-in `Map`. No GC pressure beyond
+  the map allocation itself, which is dropped immediately after conversion.
+- Simpler implementation than option 3 (no opaque Rhai type registration).
+- Faster than option 1 (no string parse overhead on every rebuild).
+- Widget rebuilds are rare by design — triggered only by `:watch` var changes,
+  not every poll tick. Normal var updates (CPU%, time) still flow through the
+  existing reactive binding path and never touch rhai-widget.
+- Builder API helpers can be added on top later as thin Rhai functions that
+  return maps — they're purely additive and don't require a design change.
+
+**Transfer type.** `RhaiWidgetData` (defined in `rhai-engine/src/lib.rs`,
+always compiled). Contains: `widget_type: String`, `attrs: Vec<(String, String)>`,
+`children: Vec<RhaiWidgetData>`. Rhai-free — `gtk4-impl` converts it to
+`WidgetUse` without importing any `rhai` types.
+
+**Reactivity.** `:watch "VAR1 VAR2"` lists vars that trigger a rebuild.
+`RhaiWidgetBinding` (in `gtk4-impl/src/rhai_widget.rs`) stores last-seen values
+of watched vars; on change, calls Rhai, converts to WidgetUse, clears container,
+appends new child.
+
+**Consequences.** Positive: clean implementation, efficient at runtime, no new
+allocations between rebuilds. Negative: widget builder scripts must run
+synchronously on the GTK thread (same constraint as `LoopBinding`). Rhai's
+500ms operation limit prevents stalls; widget builder scripts should be
+microseconds, not milliseconds.
+
 ### ADR-M006 — Hybrid config: yuck for layout, Rhai for logic
 
 **Status:** Accepted · **Date:** 2026-05-26
@@ -456,33 +495,42 @@ installs a plugin by cloning a directory — no compilation, no `sudo`.
 
 ---
 
-### Phase 4 — Full Rhai widget config (long-term)
+### Phase 4 — Rhai widget construction
 
-**Goal:** Widget trees can be defined in Rhai alongside yuck. This is the most
-complex phase — it requires exposing GTK widget construction to Rhai. Design
-is deferred until Phase 3 is complete and the interop surface is understood.
+**Status: Complete.** Implemented 2026-05-26. See ADR-M007.
 
-**High-level plan (subject to revision):**
+**Deliverables:**
 
-- [ ] `rhai-engine` gains a `WidgetBuilder` API:
-  - `meh2.label(text)`, `meh2.box(children)`, `meh2.button(text, onclick)`, etc.
-  - Returns an IR `Element` (the same type `gtk4-impl` uses from yuck compilation)
-  - Does not call GTK directly — produces the IR, daemon renders it
+- [x] `RhaiWidgetData` transfer type in `rhai-engine/src/lib.rs` — Rhai-free struct,
+  always compiled, so `gtk4-impl` never imports Rhai types directly
+- [x] `call_fn_as_widget_data(path, config_dir, fn_name)` on `RhaiEngine` — calls
+  a named Rhai function, converts the returned `Map` to `RhaiWidgetData` recursively
+- [x] `dynamic_to_widget_data()` — recursive `Dynamic → RhaiWidgetData` converter;
+  handles string/i64/f64/bool attrs, nested `children` arrays
+- [x] `crates/gtk4-impl/src/rhai_widget.rs` — `build_rhai_widget()` builds the initial
+  widget; `RhaiWidgetBinding` subscribes to `:watch` vars and rebuilds on change
+- [x] `AnyBinding::RhaiWidget` variant in `gtk4-impl` — integrated into the
+  existing reactive binding dispatch loop
+- [x] `"rhai-widget"` wired into `build_basic()` dispatch — available in any yuck config
 
-- [ ] yuck `(rhai-widget :src "path.rhai" :fn "build_widget")` —
-  a new yuck widget that calls a Rhai function, gets an IR Element back,
-  and renders it as a child
+**Usage:**
+```
+(rhai-widget :src "widgets.rhai" :fn "my_widget" :watch "CPU MEM")
+```
+The Rhai function must return a `Map` with at least a `"type"` key:
+```rhai
+fn my_widget() #{
+    type: "box",
+    orientation: "h",
+    children: [
+        #{ type: "label", text: "CPU: " + some_value() }
+    ]
+}
+```
+Rebuild cost: one `Engine::call_fn` + container swap (~50 µs typical), triggered
+only when a watched var changes. No overhead on ticks that don't touch watched vars.
 
-- [ ] Reactive Rhai widgets: if the Rhai function references a `defpoll` var,
-  the widget re-calls the function on var update (same binding system as yuck)
-
-- [ ] `defwidget`-compatible Rhai: a plugin can register a widget type by
-  exporting `fn render(attrs) -> Element` — usable as `(plugin-widget-name …)`
-  in yuck
-
-**Note:** Phase 4 is intentionally underspecified. The design emerges from
-experience with Phases 1–3. Do not start Phase 4 without completing Phase 3
-and writing an ADR for the interop design.
+Example: `examples/rhai-widget/`
 
 ---
 

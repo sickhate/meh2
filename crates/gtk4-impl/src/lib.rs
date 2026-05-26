@@ -73,10 +73,12 @@ impl LoopBinding {
     }
 }
 
-/// Either an attribute binding or a loop binding.
+/// Either an attribute binding, a loop binding, or a Rhai widget binding.
 pub enum AnyBinding {
     Attr(Binding),
     Loop(LoopBinding),
+    #[cfg(feature = "rhai")]
+    RhaiWidget(rhai_widget::RhaiWidgetBinding),
 }
 
 impl AnyBinding {
@@ -84,6 +86,8 @@ impl AnyBinding {
         match self {
             AnyBinding::Attr(b) => b.update(global_vars),
             AnyBinding::Loop(b) => b.update(global_vars),
+            #[cfg(feature = "rhai")]
+            AnyBinding::RhaiWidget(b) => b.update(global_vars),
         }
     }
 }
@@ -152,6 +156,8 @@ pub mod app;
 pub mod window;
 pub mod css;
 mod launcher;
+#[cfg(feature = "rhai")]
+mod rhai_widget;
 
 pub use app::{App, Cmd, connect_color_scheme, init_platform};
 
@@ -268,6 +274,12 @@ fn build_basic(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::Widget> {
         "systray"          => build_systray(wu, ctx)?.upcast(),
         #[cfg(feature = "shader")]
         "shader"           => build_shader(wu, ctx)?.upcast(),
+        "rhai-widget"      => {
+            #[cfg(feature = "rhai")]
+            { rhai_widget::build_rhai_widget(wu, ctx)? }
+            #[cfg(not(feature = "rhai"))]
+            { bail!("`rhai-widget` requires the `rhai` feature") }
+        }
         unknown => {
             bail!("Unknown widget: `{}`. Is it defined with `defwidget`?", unknown)
         }
