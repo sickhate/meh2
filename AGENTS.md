@@ -41,10 +41,11 @@ Python has been eliminated entirely from the poll path.
 | `getTorrra.rhai` | pgrep | 5s | Replaces bash |
 | `getOpencine.rhai` | pgrep | 5s | Replaces bash |
 | `getPulsemixer.rhai` | pgrep | 2s | Replaces bash |
+| `getWallpapers.rhai` | magick via run_shell | 30s | Replaces Python; magick still a subprocess |
+| `getPlayers.rhai` | playerctl + curl + magick | 2s | Replaces 258-line Python; PIL → magick; regex → string ops |
 | **Still bash** | | | |
 | `network` | nmcli + /proc/net | 1s | Too complex; nmcli subprocess dominates anyway |
 | `getProtonVPN` | protonvpn status | 10s | `timeout 4` call; no benefit from Rhai wrapper |
-| `getWallpapers` | magick thumbnails | 30s | Python magick calls; subprocess-bound |
 
 ### Rhai API surface (crates/rhai-engine/src/inner.rs)
 - `read_file(path)` → string (silent empty on NotFound, warn on other errors)
@@ -57,6 +58,7 @@ Python has been eliminated entirely from the poll path.
 - `path_exists(path)` → bool
 - `json_decode(json_str)` → Dynamic (parse JSON → Rhai map/array/value; empty map on error)
 - `json_encode(value)` → string (serialise any Rhai value back to JSON; useful with write_cache)
+- `read_cache(key)` → string (reads from `~/.cache/meh2/<key>`; symmetric with write_cache; same key validation)
 
 ### Known Rhai gotchas (IMPORTANT — read before writing scripts)
 - `string.trim()` and `string.replace(from, to)` are **in-place** in Rhai — they modify the string and return `()`, NOT the trimmed/replaced value. Never do `let x = str.trim()`.
