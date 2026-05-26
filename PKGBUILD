@@ -42,7 +42,7 @@ package() {
     cd "$srcdir/$pkgname"
     install -Dm755 "target/release/meh2" "$pkgdir/usr/bin/meh2"
     install -Dm644 "CLAUDE.md" "$pkgdir/usr/share/doc/$pkgname/README.md"
-    install -Dm644 "Cargo.toml" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+    install -Dm644 <(echo "GPL-3.0-or-later") "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }
 
 pkgver() {

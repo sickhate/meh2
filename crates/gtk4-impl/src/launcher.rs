@@ -180,7 +180,7 @@ pub fn build_launcher(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::Widget
                         gtk4::glib::idle_add_local_once(move || {
                             e.set_text("");
                             if let Some(c) = cmd { spawn_cmd(&bin_launch(&term, &c)); }
-                            spawn_cmd(&format!("meh close {wn}"));
+                            spawn_cmd(&format!("meh2 close {wn}"));
                         });
                     } else if show_run_command && !text.is_empty() {
                         // Literal run row — only reachable when :show-run-command true.
@@ -190,7 +190,7 @@ pub fn build_launcher(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::Widget
                         gtk4::glib::idle_add_local_once(move || {
                             e.set_text("");
                             spawn_cmd(&text);
-                            spawn_cmd(&format!("meh close {wn}"));
+                            spawn_cmd(&format!("meh2 close {wn}"));
                         });
                     }
                     Stop
@@ -200,7 +200,7 @@ pub fn build_launcher(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::Widget
                     let e  = entry.clone();
                     gtk4::glib::idle_add_local_once(move || {
                         e.set_text("");
-                        spawn_cmd(&format!("meh close {wn}"));
+                        spawn_cmd(&format!("meh2 close {wn}"));
                     });
                     Stop
                 }
@@ -252,7 +252,7 @@ fn make_app_row(app: &gio::AppInfo, selected: bool, window_name: &str) -> gtk4::
         let _ = app_clone.launch(&[], gio::AppLaunchContext::NONE);
         let w = wn.clone();
         gtk4::glib::idle_add_local_once(move || {
-            spawn_cmd(&format!("meh close {w}"));
+            spawn_cmd(&format!("meh2 close {w}"));
         });
     });
     row.add_controller(gc);
@@ -290,7 +290,7 @@ fn make_bin_row(bin: &str, selected: bool, window_name: &str, terminal: &str) ->
         let t = term.clone();
         gtk4::glib::idle_add_local_once(move || {
             spawn_cmd(&bin_launch(&t, &c));
-            spawn_cmd(&format!("meh close {w}"));
+            spawn_cmd(&format!("meh2 close {w}"));
         });
     });
     row.add_controller(gc);
@@ -326,7 +326,7 @@ fn make_run_row(cmd: &str, selected: bool, window_name: &str) -> gtk4::Box {
         let w = wn.clone();
         gtk4::glib::idle_add_local_once(move || {
             spawn_cmd(&c);
-            spawn_cmd(&format!("meh close {w}"));
+            spawn_cmd(&format!("meh2 close {w}"));
         });
     });
     row.add_controller(gc);
