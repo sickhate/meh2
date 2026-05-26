@@ -104,6 +104,15 @@ impl RhaiEngine {
             std::path::Path::new(path).exists()
         });
 
+        // read_or(path, default) → string — like read_file but returns `default`
+        // when the file is missing or empty. Useful for reading state flag files.
+        engine.register_fn("read_or", |path: &str, default: &str| -> String {
+            let content = std::fs::read_to_string(path)
+                .map(|s| s.trim_end().to_string())
+                .unwrap_or_default();
+            if content.is_empty() { default.to_string() } else { content }
+        });
+
         // write_cache(key, value) → bool — writes value to ~/.cache/meh2/<key>.
         // Key is restricted to [a-zA-Z0-9_-] to prevent path traversal.
         // Returns true on success, false on error (error is logged).

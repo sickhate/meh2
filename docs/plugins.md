@@ -94,6 +94,7 @@ The full meh2 Rhai API is available in plugins:
 | Function | Returns | Description |
 |---|---|---|
 | `read_file(path)` | string | Read and trim a file. `""` if not found. |
+| `read_or(path, default)` | string | Like `read_file` but returns `default` if the file is missing or empty. |
 | `write_cache(key, val)` | bool | Write `val` to `~/.cache/meh2/<key>`. Key must be `[a-zA-Z0-9_-]`. |
 | `run_shell(cmd)` | string | Run `sh -c cmd`, return stdout. |
 | `parse_int(s)` | i64 | Parse string to integer, 0 on failure. |

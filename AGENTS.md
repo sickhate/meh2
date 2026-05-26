@@ -26,6 +26,7 @@
 - `parse_float(s)` → f64
 - `env_var(name)` → string
 - `path_exists(path)` → bool
+- `read_or(path, default)` → string (like `read_file` but returns `default` if the file is missing or empty)
 
 ### Known Rhai gotchas (IMPORTANT — read before writing scripts)
 - `string.trim()` and `string.replace(from, to)` are **in-place** in Rhai — they modify the string and return `()`, NOT the trimmed/replaced value. Never do `let x = str.trim()`.
