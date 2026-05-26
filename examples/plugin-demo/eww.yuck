@@ -1,0 +1,23 @@
+;; plugin-demo — bar that displays vars provided by the sysinfo plugin.
+;;
+;; Run with:
+;;   meh2 --config examples/plugin-demo daemon &
+;;   meh2 --config examples/plugin-demo open bar
+;;
+;; The sysinfo plugin must be in examples/plugin-demo/plugins/sysinfo/.
+;; meh2 discovers it automatically on daemon start.
+
+(defwidget plugin-bar []
+  (box :orientation "h" :spacing 12 :halign "center"
+    (label :text {"CPU: " + PLUGIN_CPU})
+    (label :text {"RAM: " + PLUGIN_RAM})))
+
+(defwindow bar
+  :geometry (geometry
+    :anchor "top center"
+    :y "10px"
+    :width "300px"
+    :height "28px")
+  :stacking "fg"
+  :focusable false
+  (plugin-bar))

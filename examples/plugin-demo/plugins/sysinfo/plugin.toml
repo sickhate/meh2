@@ -1,0 +1,20 @@
+name        = "sysinfo"
+version     = "0.1.0"
+author      = "meh2 examples"
+description = "CPU and RAM stats from /proc without forking a subprocess."
+
+[[vars]]
+name     = "PLUGIN_CPU"
+type     = "poll"
+interval = 2
+initial  = "0%"
+
+[[vars]]
+name     = "PLUGIN_RAM"
+type     = "poll"
+interval = 5
+initial  = "0 MB"
+
+[permissions]
+read_files  = ["/proc/stat", "/proc/meminfo"]
+allow_shell = false

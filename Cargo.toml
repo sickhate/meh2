@@ -19,6 +19,7 @@ resolver = "2"
 # Internal crates
 meh_core          = { path = "crates/core",         version = "0.1.0" }
 meh_rhai_engine   = { path = "crates/rhai-engine",  version = "0.1.0" }
+meh_plugin_host   = { path = "crates/plugin-host",  version = "0.1.0" }
 meh_gtk4          = { path = "crates/gtk4-impl",    version = "0.1.0" }
 meh_layer_shell   = { path = "crates/layer-shell",  version = "0.1.0" }
 meh_script_vars   = { path = "crates/script-vars",  version = "0.1.0" }

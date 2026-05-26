@@ -142,6 +142,26 @@ impl RhaiEngine {
         Ok(dynamic_to_string(result))
     }
 
+    /// Call a named function in a Rhai script file and return the result as a string.
+    ///
+    /// The compiled AST is cached. Per-call cost is a `Scope` allocation + `call_fn`.
+    pub fn call_fn(&self, path: &Path, config_dir: &Path, fn_name: &str) -> Result<String> {
+        let abs = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            config_dir.join(path)
+        };
+
+        let ast = self.get_or_compile(&abs)?;
+        let mut scope = Scope::new();
+
+        let result: Dynamic = self.engine
+            .call_fn::<Dynamic>(&mut scope, &ast, fn_name, ())
+            .map_err(|e| anyhow::anyhow!("rhai `{}::{}`: {}", abs.display(), fn_name, e))?;
+
+        Ok(dynamic_to_string(result))
+    }
+
     /// Remove a file's compiled AST from the cache (call on hot-reload).
     pub fn invalidate(&self, path: &Path) {
         if let Ok(mut c) = self.cache.lock() {

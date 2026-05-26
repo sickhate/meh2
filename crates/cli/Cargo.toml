@@ -11,7 +11,7 @@ path = "src/main.rs"
 [features]
 # Build profiles — pick one via --features
 minimal = []
-default = ["systray", "dbus-vars", "inotify-vars", "animations", "extra-widgets", "granular-reload", "jq", "tz", "rhai"]
+default = ["systray", "dbus-vars", "inotify-vars", "animations", "extra-widgets", "granular-reload", "jq", "tz", "rhai", "rhai-plugins"]
 full    = ["default", "shader"]
 
 # Individual capabilities
@@ -23,6 +23,7 @@ extra-widgets   = ["meh_gtk4/extra-widgets"]
 shader          = ["meh_gtk4/shader"]
 granular-reload = ["meh_gtk4/granular-reload"]
 rhai            = ["meh_script_vars/rhai", "meh_gtk4/rhai"]
+rhai-plugins    = ["rhai", "meh_daemon/rhai-plugins"]
 # Expression language extensions (costly at link time)
 jq = ["simplexpr/jq", "yuck/jq", "meh_gtk4/jq"]
 tz = ["simplexpr/tz"]

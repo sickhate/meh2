@@ -127,15 +127,28 @@ pub fn run(paths: MehPaths, daemonize: bool) -> Result<()> {
                         let _ = tx.send(meh_gtk4::Cmd::Kill);
                     }
                 });
-                // Start script vars and forward updates to GTK thread, rate-limited.
-                let var_rx = meh_script_vars::start_all(
+                // Start script vars. Returns (receiver, sender) — sender is
+                // cloned into plugin-host so all var updates share one channel.
+                let (var_rx, var_tx) = meh_script_vars::start_all(
                     &script_vars,
                     exit_sender().subscribe(),
                     windows_open.clone(),
                     window_opened.clone(),
                     window_closed.clone(),
-                    config_dir,
+                    config_dir.clone(),
                 );
+
+                // Start plugins (no-op when rhai-plugins feature is disabled).
+                #[cfg(feature = "rhai-plugins")]
+                meh_plugin_host::start_plugins(
+                    &config_dir,
+                    var_tx,
+                    exit_sender().subscribe(),
+                    windows_open.clone(),
+                );
+                #[cfg(not(feature = "rhai-plugins"))]
+                drop(var_tx);
+
                 let tx_vars = cmd_tx2.clone();
                 let vars_fwd = tokio::spawn(forward_var_updates(var_rx, tx_vars, windows_open.clone(), window_opened.clone()));
                 let _ = tokio::join!(ipc, sig, vars_fwd);
@@ -324,6 +337,21 @@ async fn dispatch_cmd(
             send_exit();
             let _ = cmd_tx.send(meh_gtk4::Cmd::Kill);
             IpcResponse::ok_empty()
+        }
+
+        IpcCmd::Reload => {
+            // Invalidate plugin AST cache before the GTK reload so the first
+            // poll tick after reload compiles fresh scripts from disk.
+            #[cfg(feature = "rhai-plugins")]
+            meh_plugin_host::invalidate_all();
+
+            let (resp_tx, resp_rx) = tokio::sync::oneshot::channel();
+            let _ = cmd_tx.send(ipc_to_gtk_cmd(IpcCmd::Reload, resp_tx));
+            match tokio::time::timeout(std::time::Duration::from_secs(5), resp_rx).await {
+                Ok(Ok(r)) => r,
+                Ok(Err(_)) => IpcResponse::err("no response from daemon"),
+                Err(_) => IpcResponse::err("daemon timed out"),
+            }
         }
 
         other => {

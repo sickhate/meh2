@@ -1,0 +1,20 @@
+[package]
+name    = "meh_plugin_host"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+
+[features]
+default       = []
+rhai-plugins  = ["dep:meh_rhai_engine", "meh_rhai_engine/rhai"]
+
+[dependencies]
+meh_rhai_engine = { workspace = true, optional = true }
+eww_shared_util = { workspace = true }
+simplexpr       = { workspace = true }
+tokio           = { workspace = true }
+anyhow          = { workspace = true }
+tracing         = { workspace = true }
+serde           = { workspace = true }
+toml            = "0.8"
+once_cell       = { workspace = true }

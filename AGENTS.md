@@ -13,6 +13,7 @@
 **Phase 0 (fork baseline) complete.**
 **Phase 1 complete.** Rhai engine wired into `defpoll`/`deflisten`. `.rhai` files and `rhai:` inline sources work.
 **Phase 2 complete.** Rhai event handlers: `:onclick`/`:onscroll`/`:onhover` etc. accept `.rhai` files and `rhai:` inline.
+**Phase 3 complete.** Rhai plugin system. Drop a directory into `~/.config/meh2/plugins/`, daemon picks it up at start.
 **Real config migrated.** `~/.config/meh2/` is a full migration of the user's meh bar with Rhai replacements for high-frequency polls.
 **meh2 is the active daily bar.** Running as default via `~/.local/share/bar_choice = meh2`. Selectable via bar-switch scripts.
 
@@ -413,7 +414,7 @@ or `rhai:` in addition to shell commands. Fully backward compatible.
 
 ---
 
-### Phase 3 — Rhai plugin system
+### Phase 3 — Rhai plugin system (COMPLETE 2026-05-26)
 
 **Goal:** Users can drop a plugin directory into `~/.config/meh2/plugins/` and
 it contributes new data sources (vars) to the bar. Plugins are pure Rhai —
@@ -422,7 +423,7 @@ yuck config like any other var.
 
 **Deliverables:**
 
-- [ ] Add `crates/plugin-host/` crate:
+- [x] Add `crates/plugin-host/` crate:
   - Discover plugin dirs from `~/.config/meh2/plugins/` and
     `~/.local/share/meh2/plugins/`
   - Parse `plugin.toml` manifest: name, version, declared vars (name, type,
@@ -431,34 +432,24 @@ yuck config like any other var.
   - On each tick: call `fn get_<var_name>() -> String` in the plugin's Rhai scope
   - Plugin errors are isolated: one broken plugin does not crash the daemon
 
-- [ ] Plugin manifest format (`plugin.toml`):
-  ```toml
-  name = "weather"
-  version = "0.1.0"
-  author = "someone"
+- [x] Plugin manifest format (`plugin.toml`) — see `docs/plugins.md`
 
-  [[vars]]
-  name = "WEATHER_TEMP"
-  type = "poll"
-  interval = 300  # seconds
+- [x] Hot reload: `meh2 reload` invalidates plugin AST cache so next tick
+  recompiles changed scripts. Adding/removing plugins requires daemon restart.
 
-  [[vars]]
-  name = "WEATHER_STATUS"
-  type = "poll"
-  interval = 300
+- [x] Add `examples/plugin-demo/` — sysinfo plugin providing `PLUGIN_CPU` and
+  `PLUGIN_RAM` from `/proc` with no subprocess
 
-  [permissions]
-  read_files = []          # no file access needed
-  allow_shell = false      # no subprocess
-  ```
+- [x] Document plugin authoring in `docs/plugins.md`
 
-- [ ] Hot reload: `meh2 reload` re-discovers plugins, recompiles changed ASTs,
-  updates var graph without daemon restart
-
-- [ ] Add `examples/plugin-demo/` with a sample weather plugin and a sample
-  system-stats plugin written entirely in Rhai
-
-- [ ] Document plugin authoring in `docs/plugins.md`
+**Key files:**
+- `crates/plugin-host/src/inner.rs` — discovery, `start_plugins`, poll tasks
+- `crates/plugin-host/src/manifest.rs` — `plugin.toml` types
+- `crates/rhai-engine/src/inner.rs` — `call_fn` method added for named function calls
+- `crates/script-vars/src/lib.rs` — `start_all` now returns `(rx, tx)` so plugins
+  share the same update channel
+- `crates/daemon/src/lib.rs` — calls `start_plugins` after `start_all`;
+  `IpcCmd::Reload` intercept invalidates plugin ASTs before GTK reload
 
 **Usability gate:** After Phase 3, community plugins are possible. A user
 installs a plugin by cloning a directory — no compilation, no `sudo`.

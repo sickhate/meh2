@@ -31,6 +31,9 @@ impl RhaiEngine {
     pub fn eval_inline(&self, _script: &str) -> anyhow::Result<String> {
         anyhow::bail!("meh2 built without `rhai` feature")
     }
+    pub fn call_fn(&self, _path: &std::path::Path, _config_dir: &std::path::Path, _fn_name: &str) -> anyhow::Result<String> {
+        anyhow::bail!("meh2 built without `rhai` feature")
+    }
     pub fn invalidate(&self, _path: &std::path::Path) {}
 }
 

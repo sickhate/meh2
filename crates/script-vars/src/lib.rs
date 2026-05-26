@@ -19,7 +19,9 @@ use yuck::config::script_var_definition::{
 
 pub type VarUpdate = (VarName, DynVal);
 
-/// Start all script vars. Returns a channel that emits (VarName, DynVal) updates.
+/// Start all script vars. Returns `(receiver, sender)` — the receiver feeds
+/// `forward_var_updates`; the sender can be cloned into plugin-host so plugins
+/// share the same update channel.
 ///
 /// Poll and listen subprocesses are gated on `windows_open`: no subprocess runs
 /// while nothing is visible.  Subscribe vars (inotify / DBus) always run once
@@ -32,7 +34,7 @@ pub fn start_all(
     window_opened: Arc<Notify>,
     window_closed: Arc<Notify>,
     config_dir: PathBuf,
-) -> tokio::sync::mpsc::UnboundedReceiver<VarUpdate> {
+) -> (tokio::sync::mpsc::UnboundedReceiver<VarUpdate>, UnboundedSender<VarUpdate>) {
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<VarUpdate>();
 
     // Initialise the Rhai engine once here so it is ready before any poll/listen
@@ -80,7 +82,7 @@ pub fn start_all(
         }
     }
 
-    rx
+    (rx, tx)
 }
 
 // ── Poll ──────────────────────────────────────────────────────────────────────

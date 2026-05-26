@@ -4,10 +4,15 @@ version = "0.1.0"
 edition = "2024"
 license = "GPL-3.0-or-later"
 
+[features]
+default      = []
+rhai-plugins = ["dep:meh_plugin_host", "meh_plugin_host/rhai-plugins"]
+
 [dependencies]
 meh_core          = { workspace = true }
 meh_gtk4          = { workspace = true }
 meh_script_vars   = { workspace = true }
+meh_plugin_host   = { workspace = true, optional = true }
 eww_shared_util   = { workspace = true }
 simplexpr         = { workspace = true }
 tokio           = { workspace = true }
