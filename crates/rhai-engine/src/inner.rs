@@ -93,6 +93,16 @@ impl RhaiEngine {
             s.trim().parse::<f64>().unwrap_or(0.0)
         });
 
+        // env_var(name) → string — reads an environment variable, "" if unset.
+        engine.register_fn("env_var", |name: &str| -> String {
+            std::env::var(name).unwrap_or_default()
+        });
+
+        // path_exists(path) → bool — true if the path exists on disk.
+        engine.register_fn("path_exists", |path: &str| -> bool {
+            std::path::Path::new(path).exists()
+        });
+
         Arc::new(Self {
             engine,
             cache: Mutex::new(HashMap::new()),
