@@ -1889,6 +1889,7 @@ dependencies = [
  "meh_core",
  "meh_gtk4",
  "meh_plugin_host",
+ "meh_rhai_engine",
  "meh_script_vars",
  "nix 0.29.0",
  "once_cell",
