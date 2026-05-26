@@ -10,6 +10,7 @@ use std::{
 };
 
 use eww_shared_util::VarName;
+use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use once_cell::sync::OnceCell;
 use simplexpr::dynval::DynVal;
 use tokio::sync::mpsc::UnboundedSender;
@@ -105,6 +106,8 @@ pub fn start_plugins(
         return;
     }
 
+    let script_paths_for_watch: Vec<PathBuf> = plugins.iter().map(|p| p.script.clone()).collect();
+
     for plugin in plugins {
         for var_decl in &plugin.manifest.vars {
             if var_decl.kind != VarKind::Poll {
@@ -131,6 +134,8 @@ pub fn start_plugins(
             ));
         }
     }
+
+    spawn_file_watcher(script_paths_for_watch);
 }
 
 /// Invalidate all plugin ASTs from the Rhai cache so next poll tick recompiles.
@@ -142,6 +147,53 @@ pub fn invalidate_all() {
         engine.invalidate(path);
     }
     tracing::debug!("plugin-host: invalidated {} plugin AST(s)", scripts.len());
+}
+
+// ── File watcher (auto-invalidate on script change) ───────────────────────────
+
+fn spawn_file_watcher(scripts: Vec<PathBuf>) {
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<PathBuf>(32);
+
+    let watcher_result = RecommendedWatcher::new(
+        move |result: notify::Result<Event>| {
+            let Ok(event) = result else { return };
+            if !matches!(
+                event.kind,
+                EventKind::Modify(_) | EventKind::Create(_)
+            ) {
+                return;
+            }
+            for path in event.paths {
+                if path.file_name().map(|n| n == "main.rhai").unwrap_or(false) {
+                    let _ = tx.blocking_send(path);
+                }
+            }
+        },
+        notify::Config::default(),
+    );
+
+    let mut watcher = match watcher_result {
+        Ok(w)  => w,
+        Err(e) => { tracing::warn!("plugin-host: file watcher unavailable: {}", e); return; }
+    };
+
+    for script in &scripts {
+        if let Some(dir) = script.parent() {
+            if let Err(e) = watcher.watch(dir, RecursiveMode::NonRecursive) {
+                tracing::warn!("plugin-host: cannot watch {}: {}", dir.display(), e);
+            }
+        }
+    }
+
+    tokio::spawn(async move {
+        let _watcher = watcher; // keep alive for the duration of this task
+        while let Some(path) = rx.recv().await {
+            if let Some(engine) = meh_rhai_engine::global() {
+                engine.invalidate(&path);
+                tracing::info!("plugin-host: auto-reloaded {}", path.display());
+            }
+        }
+    });
 }
 
 // ── Poll task ─────────────────────────────────────────────────────────────────

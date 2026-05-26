@@ -125,12 +125,15 @@ fn get_PLUGIN_CPU() {
 
 ## Hot reload
 
-`meh2 reload` invalidates the AST cache for all plugin scripts. The next poll
-tick recompiles `main.rhai` from disk, so you can edit a plugin's logic and
-run `meh2 reload` to pick up the change without restarting the daemon.
+Plugin scripts are watched with inotify. When `main.rhai` changes on disk, the
+daemon automatically invalidates the AST cache for that plugin — no `meh2 reload`
+required. The next poll tick recompiles the script from disk.
+
+`meh2 reload` still invalidates all plugin ASTs explicitly (useful after editing
+`plugin.toml` or to force an immediate recompile).
 
 Adding or removing plugins (new directories, deleted directories) requires a
-full daemon restart — `meh2 reload` only recompiles existing plugins' scripts.
+full daemon restart — the file watcher and poll tasks are spawned once at startup.
 
 ## Plugin discovery paths
 
