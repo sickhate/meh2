@@ -138,6 +138,24 @@ impl RhaiEngine {
             }
         });
 
+        // read_cache(key) → string — reads from ~/.cache/meh2/<key>. Symmetric with write_cache.
+        // Returns "" if the key doesn't exist or HOME is unset.
+        engine.register_fn("read_cache", |key: &str| -> String {
+            if !key.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-') {
+                tracing::warn!("rhai read_cache: invalid key {:?}", key);
+                return String::new();
+            }
+            let path = match std::env::var("HOME") {
+                Ok(h) => std::path::PathBuf::from(h).join(".cache/meh2").join(key),
+                Err(_) => return String::new(),
+            };
+            match std::fs::read_to_string(&path) {
+                Ok(s) => s.trim_end().to_string(),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+                Err(e) => { tracing::warn!("rhai read_cache({key}): {e}"); String::new() }
+            }
+        });
+
         // write_cache(key, value) → bool — writes value to ~/.cache/meh2/<key>.
         // Key is restricted to [a-zA-Z0-9_-] to prevent path traversal.
         // Returns true on success, false on error (error is logged).
