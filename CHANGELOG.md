@@ -4,135 +4,119 @@ All notable changes to meh2 are documented here.
 
 ## [Unreleased]
 
-### Added (meh2 — Rhai engine)
+### meh2 — Rhai scripting + plugin system
+
+#### Phase 1 — Rhai poll/listen sources
 - **Rhai scripting engine** (`crates/rhai-engine/`) — in-process poll/listen sources, no fork
-- **Rhai event handlers** — `:onclick`/`:onscroll`/`:onhover` accept `.rhai` or `rhai:` inline
-- **Rhai API**: `read_file()`, `run_shell()`, `parse_int()`, `parse_float()`, `env_var()`, `path_exists()`
-- **`read_file()` silent on NotFound** — returns `""` instead of warning for missing state files
+- **`.rhai` file sources** and `rhai:` inline expressions for `defpoll`/`deflisten`
+- **Rhai API**: `read_file()`, `run_shell()`, `parse_int()`, `parse_float()`, `env_var()`, `path_exists()`, `read_or()`, `write_cache()`, `read_cache()`
+- **`json_decode(json_str)`** — parse JSON arrays AND objects into Rhai maps/arrays/values (via serde_json)
+- **`json_encode(value)`** — serialize any Rhai value back to JSON string
+- **`read_cache(key)`** — reads from `~/.cache/meh2/<key>`; symmetric with `write_cache()`
 - **AST cache** — scripts compiled once per hot-reload cycle; per-tick cost < 1 ms
 - **`examples/rhai-bar/`** — demo bar using Rhai for CPU, RAM, time, onclick handler
-- **Performance baselines** (`benches/baselines/`) — measured fork+exec ~1.3–1.8 ms vs Rhai ~0.2 ms for `/proc` reads
-- **Real config migration** — `~/.config/meh2/` fully migrated from meh; all paths, IPC calls, toggle scripts updated
-- **`getSysStats.rhai`** — replaces Python `getSysStats` script; CPU/RAM/temp from `/proc`+`/sys`, disk via `df`
-- **meh2 as default bar** — `~/.local/share/bar_choice = meh2`; `bar-launch.sh` and `bar-switch` scripts updated
+- **Performance baseline**: fork+exec ~1.3–1.8 ms vs Rhai ~0.2 ms for `/proc` reads
 
-### Performance (bar open, all polls active, 2026-05-26)
-- meh2: ~331 MB RSS, ~10% CPU (GTK4 rendering dominates)
-- meh:  ~321 MB RSS, ~9%  CPU (baseline)
-- Rhai engine overhead: ~10 MB RSS, ~1% CPU
-- getSysStats: Python startup eliminated (~80 ms/3s tick saved); CPU/RAM now pure `/proc` reads
+#### Phase 2 — Rhai event handlers
+- **Rhai event handlers** — `:onclick`/`:onscroll`/`:onhover`/`:onchange` accept `.rhai` files or `rhai:` inline
+- Handlers run in `spawn_blocking` — never block GTK main thread
+- 500ms operation limit enforced by Rhai engine; runaway scripts interrupted, last good value kept
 
-### Known Rhai quirks (see CLAUDE.md for full guide)
-- `string.trim()` / `string.replace()` are in-place, return `()` — never assign their result
-- Template strings `` `${var}` `` work in `.rhai` files; use `+` concatenation inside yuck strings
+#### Phase 3 — Plugin system
+- **Rhai plugin system** (`crates/plugin-host/`) — drop a directory into `~/.config/meh2/plugins/`
+- `plugin.toml` manifest: name, version, declared vars, file-access allowlist
+- Plugins contribute `defpoll`/`deflisten`-style vars to the bar
+- `meh2 reload` invalidates plugin AST cache; adding/removing plugins requires daemon restart
+- **`examples/plugin-demo/`** — sysinfo plugin with `PLUGIN_CPU` and `PLUGIN_RAM` from `/proc`
 
-## [Unreleased — meh upstream]
+#### Phase 4 — Rhai widget construction
+- **`(rhai-widget :src "f.rhai" :fn "fn" :watch "VARS")`** — Rhai functions return map-based widget trees rendered live
+- Map-based IR (`RhaiWidgetData`) — no new Rhai types, drop-in conversion to `WidgetUse`
+- Rebuild triggered only by `:watch` var changes (~50 µs typical)
+- **`examples/rhai-widget/`** — example widget defined in Rhai
 
-### Added
-- **`(launcher)` attr `:terminal`** — when set (e.g. `:terminal "foot"`), PATH
-  executable results are launched inside that terminal with `-e`. Defaults to `""`
-  (bins run directly, suitable for GUI apps). meh itself has no terminal dependency;
-  the user declares it explicitly in their config.
-- **stat-ring tooltips** — each system stats ring (CPU, RAM, home, temp) now shows
-  a tooltip with the human-readable value and percentage on hover.
-- **Aethertune bar icon turns orange** when running (classes `playing` / `hidden`).
-  Added `aethertune` identifier class to the bar button for CSS targeting.
-- **Launcher results dark background** — `.launcher-results` gets a solid dark
-  background so results are readable regardless of what's behind the window.
-- **eww switch button** in notification centre settings Row 3 — writes `eww` to
-  `~/.local/share/bar_choice` and calls `bar-launch.sh`; the reverse
-  `switch-to-meh.sh` lives in the eww scripts dir.
+#### Phase 4.5 — Plugin-registered defwidgets
+- Plugins declare `[[widgets]]` in `plugin.toml`; those names work directly in yuck as `(my-widget :attr "val" :watch "VARS")`
+- `WIDGET_REGISTRY` (`OnceCell`) populated by `plugin-host` at startup, checked by `build_basic()` for unknown widget names
+- Call-site attrs evaluated once at build time, merged with watched-var values on every rebuild
 
-### Fixed
-- **Launcher bin results empty** — `:show-bins` was set to `false` in `popups.yuck`.
-  Changed to `true` so PATH executables appear in search results.
-- **`(launcher)` attrs `:show-bins` and `:show-run-command`** — `:show-bins false`
-  restricts results to desktop apps only (no PATH executables); `:show-run-command false`
-  removes the "run command" literal fallback row. Both default `true` for existing configs.
-- **Launcher: arrow key navigation fixed** — `EventControllerKey` now runs in
-  `PropagationPhase::Capture` so Up/Down/Enter/Esc are captured before the GtkEntry's
-  default handler; arrow navigation now works reliably.
-- **Launcher CSS** — `.launcher` container is now transparent; `.launcher-input` retains
-  grey background; input height reduced. `.launcher-row`, `.launcher-row.selected`,
-  `.launcher-name`, `.launcher-desc`, `.launcher-run-prefix` classes added to dark and
-  light SCSS themes.
-- **Bar "Glass" toggle** — `BAR_GLASS` defpoll + `toggle-bar-transparent.sh`; `.right.glass`
-  CSS rule makes the bar background fully transparent. Toggle button added to notification
-  center settings Row 1.
-- **Discord and WeChat bar icons** — `getDiscord` / `getWechat` poll scripts; `discord.sh` /
-  `wechat.sh` onclick scripts; `discord-widget` / `wechat-widget` in `bar-launchers`
-  (left of WhatsApp). Detect unread count from window title, show running state.
+#### `defsubscribe :file`
+- **inotify-backed file watching** — instant response to file changes; zero polling overhead
+- Two-phase watcher: watches parent directory if file doesn't exist yet (handles missing/recreated files)
+- **Handles atomic writes** — `EventKind::Remove` detected; watcher transitions back to parent dir for next `Create`
+- Tilde (`~`) paths expanded
+- **10 toggle flag files** converted from 60s/2s polls to inotify: `BAR_EXTENDED`, `PILL_MODE`, `CONTROLS_IN_BAR`, `CAVA_VISIBLE`, `ICON_DIM`, `REVERSE_THEME`, `BROWSER`, `BAR_ISLAND`, `BAR_AUTOHIDE`, `BAR_GLASS`
+- `BAR_POS`, `NOTIF_SETTINGS`, `BAR_MONITOR_LABEL` also converted
 
-### Fixed
-- **`Unknown variable` errors when opening popups** — `MehConfig::load` only pre-populated
-  `defvar` initial values; `deflisten` / `defpoll` / `defsubscribe` initial values were sent
-  asynchronously and could arrive after the first `open_window` call. Fixed by adding
-  `ScriptVarDefinition::initial_value()` and pre-populating all script vars into `var_state`
-  at load time. Fixes wifi popup "Unknown variable WIFI_STATE" and invisible play button
-  in volume popup.
-- **Slow-polling vars blank after reload** — `reload_config` discarded live var values when
-  loading the new config; vars with long intervals (e.g. `USERNAME`, `SYS_INFO` at 60 s)
-  stayed blank until the next tick. Added `carry_var_state()` which copies all current var
-  values into the freshly loaded config before replacing it. The async updater overwrites
-  each value on its next tick so staleness is bounded by the poll interval.
-- **Launcher crash on Enter with no results** — the `Enter` key handler fell through to the
-  literal run-command branch even when `:show-run-command false`, running whatever was typed
-  (e.g. `meh`) as a shell command and crashing the daemon. Gated the branch on `show_run_command`.
-- **IRC / Discord icon colours ignored** — `.module.irc.running` and `.module.discord.running`
-  had equal specificity to but appeared before `.launchers .module.running` in the stylesheet,
-  so the later rule won. Moved the per-icon overrides into the `.launchers` block so they
-  appear after and take effect correctly.
+#### Python elimination — full poll path migration
+All high-frequency scripts migrated to `.rhai`; Python fully eliminated from daemon polling.
 
-### Fixed
-- **Duplicate deflisten processes** — every script using `cmd | while read; do ...; done`
-  spawned the while loop as a visible bash subshell. Fixed with `shopt -s lastpipe` in
-  all three bash deflisten scripts (cava-meh, wifi-available, player-meta). The two
-  inline `sh -c` deflisten blobs (pacman, calendar) were extracted into proper
-  `getPacman-listen.sh` / `calendar-listen.sh` scripts with the same fix.
-- **Orphaned scripts survive daemon restart** — `kill_orphaned_scripts` used SIGTERM
-  which bash shells blocked in inotifywait kernel waits can ignore. Switched to SIGKILL.
-- **Bar launch leaves stale daemon alive** — `bar-launch.sh` now loops up to 2 s waiting
-  for `meh ping` to fail before starting a new daemon, then hard-kills any survivor with
-  `pkill -9 -x meh`. Prevents dual-daemon situations on repeated launches.
-- **Theme switch freezes bar** — `toggle-reverse-theme.sh` was using `pkill meh` + full
-  daemon restart on every theme change. Replaced with `meh reload`; CSS reloads in-place
-  with no bar flicker or freeze.
-- **GTK4 4.10 deprecation warnings in `circular-progress`** — `style_context().add_provider()`
-  replaced with `style_context_add_provider_for_display` scoped to a unique CSS class;
-  redundant DrawingArea CSS provider removed (draw_func already clears to transparent).
-- **tooltip binding never registered when var not yet in scope** — `eval_attr_str`
-  for a tooltip attr containing a defpoll var ref returned `None` at window-build
-  time (initial poll still running), causing the entire tooltip block including
-  `maybe_bind` to be skipped. Changed to `unwrap_or_default()` so the binding is
-  always registered; the setter fires on the first real poll value. Matches the
-  pattern already used for the `class` binding.
-- **orphaned inotifywait processes for /tmp/meh/ triggers** — `kill_orphaned_scripts`
-  only matched processes with the config scripts dir in their cmdline. Added `/tmp/meh/`
-  as a second match needle so inotifywait processes watching cal_trigger and similar
-  files are terminated on daemon restart.
-- **deflisten subprocess leak** — listen vars now run for the daemon's lifetime
-  without window gating. Killing/restarting on every popup open/close was
-  accumulating orphaned grandchild processes (inotifywait, playerctl --follow,
-  nmcli monitor, etc.). Subprocesses restart automatically if they die.
-- **bar flicker on popup close** — `update_vars()` was calling
-  `rebuild_open_windows()` (full window close/reopen) instead of
-  `update_bindings()` (reactive, O(bindings)). Now only changed bindings
-  are pushed.
-- **menus not closing on click-outside** — click-catcher and popup windows
-  moved from `stacking "fg"` / `stacking "bottom"` to `stacking "overlay"`,
-  ensuring they receive input above app windows on Wayland.
-- **deflisten process groups** — spawned with `.process_group(0)` so
-  `killpg(SIGTERM)` on shutdown reaches grandchildren, not just the shell
-  wrapper.
+| Script | Replaces | Interval | Notes |
+|---|---|---|---|
+| `getSysStats.rhai` | Python | 3s | CPU/RAM/temp from `/proc`+`/sys`; delta cache via `write_cache` |
+| `getDiscord.rhai` | Python | 2s | `json_decode(hyprctl clients -j)` for unread count |
+| `getWhatsapp.rhai` | Python | 2s | `json_decode(hyprctl clients -j)`; handles multiple title formats |
+| `getIrc.rhai` | bash | 3s | pgrep |
+| `getMail.rhai` | bash | 5s | pgrep |
+| `getSpotify.rhai` | bash | 2s | playerctl + `write_cache`/`read_cache` for now-playing state |
+| `getVolume.rhai` | bash | 2s | Single `wpctl get-volume` call; extracts vol+mute together |
+| `bluetooth.rhai` | bash | 3s | bluetoothctl; toggle still handled by `bt-toggle.sh` |
+| `getIphone.rhai` | bash+Python | 5s | Battery icon selection in Rhai (was Python `chr()`) |
+| `getNcmpcpp.rhai` | bash+Python | 2s | `json_decode(hyprctl clients -j)` + mpc |
+| `getAethertune.rhai` | bash+jq | 3s | `json_decode(hyprctl clients -j)` + `read_file` history |
+| `getHeadphones.rhai` | bash | 5s | Single bluetoothctl call per device (was two) |
+| `getTorrra.rhai` | bash | 5s | pgrep |
+| `getOpencine.rhai` | bash | 5s | pgrep |
+| `getPulsemixer.rhai` | bash | 2s | pgrep |
+| `getSinks.rhai` | Python | 3s | Parses `pactl list sinks` output in Rhai; no Python |
+| `getHotspot.rhai` | bash | 2s | ideviceinfo + nmcli |
+| `getImpala.rhai` | bash | 2s | pgrep |
+| `getMicVol.rhai` | bash+awk | 2s | Single wpctl call for level+mute |
+| `getPlayerPositionFmt.rhai` | bash+awk | 2s | MM:SS formatting in Rhai |
+| `getWifiNetworks.rhai` | Python | 15s | Parses nmcli output in Rhai; deduplicates SSIDs |
+| `getWallpapers.rhai` | Python | 30s | magick thumbnails via `run_shell`; `push()`/`json_encode` for grid |
+| `getPlayers.rhai` | 258-line Python | 2s | PIL→magick; hashlib→md5sum; urllib→curl; regex→string ops |
 
-### Added
-- **Native `(launcher)` widget** — instant app search via `gio::AppInfo`,
-  PATH executable autocomplete, keyboard nav (↑/↓/Enter/Escape), click-to-launch,
-  and a literal "run command" fallback row. No subprocess per keystroke.
-- **`dots` CLI** — symlink to `dotbackup`; `dots backup`, `dots restore`,
-  `dots check`, `dots list`, `dots prune`, `dots clean` subcommands.
-- **PKGBUILD** — Arch Linux package build script.
-- **Git repository** — project now tracked in git.
+Remaining bash polls: `network` (1s, nmcli-heavy), `getProtonVPN` (10s, `timeout 4`), `getWeather` (600s).
+Remaining Python file: `notif-focus.py` — onclick utility only, never polled.
+
+#### Known Rhai quirks (see CLAUDE.md for full guide)
+- `string.trim()` / `string.replace()` are **in-place**, return `()` — never assign their result
+- Template strings `` `${var}` `` work in `.rhai` files; use `+` inside yuck strings
+- `json_decode` on error returns an empty map `#{}` — check `len() > 0` before indexing
+- No built-in regex; use `split()`, `contains()`, `index_of()`, `sub_string()` instead
+
+---
+
+### meh upstream (cherry-picked fixes and features)
+
+#### Added
+- **`(launcher)` attr `:terminal`** — PATH binaries launched in terminal with `-e`
+- **stat-ring tooltips** — CPU/RAM/home/temp rings show value + percentage on hover
+- **Aethertune bar icon** turns orange when playing (class `playing`/`hidden`)
+- **Launcher results dark background** — readable over any wallpaper
+
+#### Fixed
+- **Launcher bin results empty** — `:show-bins` was `false`; fixed to `true`
+- **Launcher arrow key navigation** — `EventControllerKey` in `PropagationPhase::Capture`
+- **Bar "Glass" toggle** — `BAR_GLASS` flag; `.right.glass` CSS rule for transparency
+- **Discord/WhatsApp bar icons** — `discord-widget`/`whatsapp-widget` detect unread count; WhatsApp icon blinks green (#25D366) not cyan
+- **`Unknown variable` on popup open** — `deflisten`/`defpoll` initial values pre-populated into `var_state` at load time
+- **Slow-polling vars blank after reload** — `carry_var_state()` carries live values into reloaded config
+- **Launcher crash on Enter with no results** — gated on `show_run_command`
+- **IRC/Discord icon colours ignored** — moved overrides inside `.launchers` block for correct specificity
+- **Duplicate deflisten processes** — `shopt -s lastpipe` in all bash deflisten scripts
+- **Orphaned scripts survive restart** — `kill_orphaned_scripts` switched to SIGKILL
+- **Bar launch stale daemon** — `bar-launch.sh` waits for `meh ping` to fail before restarting
+- **Theme switch freezes bar** — replaced daemon restart with `meh reload`
+- **GTK4 4.10 deprecation warnings** in `circular-progress` widget
+- **tooltip binding skipped when var not in scope** — `unwrap_or_default()` ensures binding is always registered
+- **deflisten subprocess leak** — listen vars run for daemon lifetime; subprocesses restart if they die
+- **bar flicker on popup close** — `update_bindings()` instead of `rebuild_open_windows()`
+- **menus not closing on click-outside** — windows moved to `stacking "overlay"`
+- **deflisten process groups** — spawned with `.process_group(0)` for clean SIGTERM on shutdown
+
+---
 
 ## [0.1.0] — 2026-05-22
 

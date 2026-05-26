@@ -1,89 +1,85 @@
-# meh
+# meh2
 
-> *Pronounced "meh", as in the noise you make when someone shows you yet another bar for Wayland.*
+> *meh with a Rhai engine, a plugin system, and Python-free polling.*
 
-**meh** is a GTK4 Wayland widget system and status bar — a spiritual successor to [elkowar/eww](https://github.com/elkowar/eww), rebuilt from the ground up on GTK4 for modern Wayland compositors like Hyprland, Sway, and river.
-
----
-
-## The story
-
-eww is arguably the best widget system ever written for Linux desktops. It gave you a declarative config language (yuck), reactive variables, poll and listen script sources, and the freedom to build literally anything — bars, dashboards, popups, launchers — all from a single binary with zero runtime dependencies on a desktop environment.
-
-The problem: eww is GTK3. And GTK3 is end-of-life.
-
-GTK4 brings real hardware-accelerated rendering, proper fractional scaling on Wayland, smoother animations, and better layer-shell integration. Running a bar on GTK3 in 2025 means fighting scaling bugs, missing Wayland protocols, and depending on a toolkit that's no longer receiving features.
-
-elkowar started a GTK4 branch but stalled — the scope was too large and X11/macOS compat made the port messy. [Ewwii-sh/ewwii](https://github.com/Ewwii-sh/ewwii) made real progress on the GTK4 port but replaced yuck with rhai, breaking the entire existing eww config ecosystem.
-
-**meh** takes Ewwii's completed GTK4 port, rips out rhai, replaces it with eww's original yuck parser, and pushes the result further than either project went: reactive O(bindings) updates, per-window granular hot reload, native inotify and DBus subscribe vars, declarative animations, and a native app launcher — all with a sub-0.1% idle CPU target.
-
-If you have an eww config, it will mostly just work. If you're starting fresh, you get a faster, cleaner foundation.
+**meh2** is a GTK4 Wayland widget system and status bar — a fork of [meh](https://github.com/sickhate/meh) that adds in-process Rhai scripting, a Rhai plugin system, and inotify-backed file subscriptions. Your existing yuck/meh configs work without modification; Rhai is purely additive.
 
 ---
 
-## Features
+## What meh2 adds over meh
 
-- **Yuck configuration** — same S-expression language as eww. Your existing config is compatible.
-- **GTK4 + Wayland-native** — `gtk4-layer-shell`, fractional scaling, smooth rendering. No X11.
-- **Reactive bindings** — variable updates push only to affected widgets. No full tree rebuilds.
-- **Granular hot reload** — `meh reload` closes and reopens only windows whose definition changed. Unchanged windows keep their state.
-- **Poll gating** — `defpoll` subprocesses pause when no windows are open. Idle daemon sits at ~0.17% CPU.
-- **`defsubscribe`** — inotify and DBus property watchers. Zero-cost reactive sources for battery, network state, media players — no polling, no subprocess.
-- **Deflisten process groups** — `deflisten` subprocesses run for the daemon's lifetime; SIGTERM on shutdown reaches grandchildren (inotifywait, playerctl --follow, nmcli monitor, etc.).
-- **Declarative animations** — `AdwTimedAnimation` on `progress` values and opacity. Interruptible, respects system reduced-motion.
-- **Native app launcher** — `(launcher)` widget: instant `gio::AppInfo` search, PATH executable autocomplete, keyboard nav, click-to-launch. No subprocess per keystroke.
-- **System tray** — StatusNotifierItem/StatusNotifierHost, ported from eww. Opt-in via `systray` Cargo feature.
-- **`(shader)` widget** — GLSL fragment shaders via `GtkGLArea`. Full profile only.
-- **Three build profiles**: `minimal` (4.2 MiB), `default` (6.9 MiB), `full`.
-
----
-
-## Why GTK4 is faster
-
-| | eww (GTK3) | meh (GTK4) |
+| Feature | meh | meh2 |
 |---|---|---|
-| Rendering | Software (cairo only) | Hardware-accelerated (GSK/GL) |
-| Fractional scaling | Buggy on Wayland | Native (`wp_fractional_scale_v1`) |
-| Animations | CSS transitions only | `AdwTimedAnimation` — interruptible, zero idle cost |
-| Layer shell | `wlr-layer-shell` via gdk3 hacks | `gtk4-layer-shell` — proper protocol |
-| Idle CPU (clock + workspaces) | ~0.5–1% | ~0.17–0.35% |
+| Poll sources | Shell scripts only | `.rhai` files + `rhai:` inline + shell |
+| Event handlers | Shell commands | `.rhai` files + `rhai:` inline + shell |
+| Plugin system | None | Rhai plugins in `~/.config/meh2/plugins/` |
+| Widget builders | `defwidget` in yuck only | `(rhai-widget)` + plugin-registered widgets |
+| File watching | `defsubscribe :inotify` | `defsubscribe :file` with tilde expansion + atomic-write support |
+| Python in poll path | Required for complex scripts | **Zero** — json_decode, string ops, run_shell cover every use case |
+| Poll latency (Rhai) | N/A | < 1 ms (no fork, AST cached) |
+| Poll latency (shell) | ~1.3–1.8 ms | Same — shell path unchanged |
+
+---
+
+## Rhai API
+
+Scripts have access to a sandboxed API (no filesystem/network unless explicitly called):
+
+```
+read_file(path)          → string    silent "" on NotFound
+read_or(path, default)   → string    returns default if missing/empty
+write_cache(key, value)  → bool      writes to ~/.cache/meh2/<key>
+read_cache(key)          → string    reads from ~/.cache/meh2/<key>
+run_shell(cmd)           → string    stdout of sh -c cmd (logged)
+parse_int(s)             → i64
+parse_float(s)           → f64
+env_var(name)            → string
+path_exists(path)        → bool
+json_decode(json_str)    → Dynamic   JSON object/array/value → Rhai
+json_encode(value)       → string    any Rhai value → JSON string
+```
+
+### Gotchas
+
+- `string.trim()` and `string.replace()` are **in-place** — they return `()`, not the new value.
+- Template strings `` `${var}` `` work in `.rhai` files but not inside yuck strings (use `+` instead).
+- No built-in regex — use `split()`, `contains()`, `index_of()`, `sub_string()`.
 
 ---
 
 ## Installation
 
-### Arch Linux (AUR / PKGBUILD)
+### Arch Linux
 
 ```bash
-git clone https://github.com/sickhate/meh
-cd meh
+git clone https://github.com/sickhate/meh2
+cd meh2
 makepkg -si
 ```
 
 ### From source
 
 ```bash
-git clone https://github.com/sickhate/meh
-cd meh
+git clone https://github.com/sickhate/meh2
+cd meh2
 cargo build --release
-sudo install -Dm755 target/release/meh /usr/local/bin/meh
+sudo install -Dm755 target/release/meh2 /usr/bin/meh2
 ```
 
-**Dependencies:** `gtk4`, `gtk4-layer-shell`, `libadwaita`, `cairo`, `glib2`, `pango`
+**Runtime dependencies:** `gtk4`, `gtk4-layer-shell`, `libadwaita`, `cairo`, `glib2`, `pango`
 
 **Build dependencies:** `rust` (stable), `cargo`
 
 ### Build profiles
 
 ```bash
-# Minimal — 4.2 MiB, no tray, no animations, no shader
+# Minimal — no Rhai, no tray, no animations
 cargo build --release --no-default-features --features minimal
 
-# Default — 6.9 MiB, everything most users want
+# Default — everything most users want (includes Rhai + plugins)
 cargo build --release
 
-# Full — everything including GLSL shaders
+# Full — default + GLSL shaders
 cargo build --release --features full
 ```
 
@@ -92,76 +88,121 @@ cargo build --release --features full
 ## Quick start
 
 ```bash
-# Start the daemon
-meh daemon
-
-# Open a window defined in your config
-meh open bar
-
-# Reload config (hot reload — only changed windows restart)
-meh reload
-
-# Close a window
-meh close bar
-
-# Update a variable
-meh update MY_VAR=hello
+meh2 daemon
+meh2 open bar
+meh2 reload   # hot reload — only changed windows restart
+meh2 close bar
+meh2 update MY_VAR=hello
 ```
 
-Config lives in `~/.config/meh/`. The main file is `meh.yuck`. CSS in `style.scss`.
+Config lives in `~/.config/meh2/`. Main file: `meh2.yuck` (or `eww.yuck`). CSS: `style.scss`.
 
 ---
 
-## Example config
+## Example — Rhai poll source
 
 ```yuck
-(defpoll TIME :interval "1s" `date +%H:%M:%S`)
-(defpoll DATE :interval "60s" `date "+%A, %B %d"`)
+(defpoll CPU :interval "2s" "scripts/getCpu.rhai")
 
-(defwindow bar
-  :monitor 0
-  :geometry (geometry :width "100%" :height "30px" :anchor "top center")
-  :stacking "fg"
-  :exclusive true
-  (centerbox
-    (label :text "meh")
-    (label :text TIME)
-    (label :text DATE)))
+(defwidget cpu-bar []
+  (label :text "${CPU.pct}% ${CPU.temp}°C"))
+```
+
+```rhai
+// scripts/getCpu.rhai
+let stat = read_file("/proc/stat");
+let nums = [];
+for p in stat.split("\n")[0].split(" ") {
+    if p != "" && p != "cpu" { nums += p; }
+}
+let idle  = parse_int(nums[3]);
+let total = parse_int(nums[0]) + parse_int(nums[1]) + parse_int(nums[2]) + idle + parse_int(nums[4]);
+
+let prev = read_cache("cpu_prev").split(",");
+let pct  = 0;
+if prev.len() >= 2 {
+    let dt = total - parse_int(prev[0]);
+    let di = idle  - parse_int(prev[1]);
+    if dt > 0 { pct = ((dt - di) * 100) / dt; }
+}
+write_cache("cpu_prev", total + "," + idle);
+
+let temp = parse_int(read_file("/sys/class/thermal/thermal_zone0/temp")) / 1000;
+`{"pct":${pct},"temp":${temp}}`
 ```
 
 ---
 
-## Native launcher
-
-Add to your Hyprland config:
-
-```
-bind = SUPER, SPACE, exec, meh open --toggle launcher
-```
-
-Add to your `meh.yuck` or `popups.yuck`:
+## Example — defsubscribe :file
 
 ```yuck
-(defwindow launcher
-  :monitor 0
-  :geometry (geometry :anchor "top center" :y "80px" :width "640px")
-  :stacking "overlay"
-  :focusable "exclusive"
-  :wm-ignore true
-  (launcher :placeholder "Search applications…"
-            :max-results 8
-            :window "launcher"))
+; Instant inotify response — no polling, zero overhead when file doesn't change
+(defsubscribe THEME :file "~/.local/share/meh2/theme" :initial "dark")
 ```
 
-Type to search apps and PATH executables. `↑`/`↓` to navigate, `Enter` to launch, `Escape` to close.
+The watcher handles missing files (watches parent dir), atomic writes (rm+recreate), and tilde paths.
+
+---
+
+## Example — Rhai plugin
+
+```
+~/.config/meh2/plugins/sysinfo/
+├── plugin.toml
+└── main.rhai
+```
+
+```toml
+# plugin.toml
+name    = "sysinfo"
+version = "0.1.0"
+
+[[vars]]
+name     = "PLUGIN_CPU"
+interval = "3s"
+
+[[widgets]]
+name          = "sysinfo-pill"
+fn_name       = "render_sysinfo_pill"
+default_watch = ["PLUGIN_CPU"]
+```
+
+```rhai
+// main.rhai
+fn get_PLUGIN_CPU() {
+    let pct = parse_int(read_file("/sys/class/thermal/thermal_zone0/temp")) / 1000;
+    `{"pct":${pct}}`
+}
+
+fn render_sysinfo_pill() #{
+    type: "label",
+    text: "CPU " + PLUGIN_CPU.pct + "%"
+}
+```
+
+Use in yuck: `(sysinfo-pill)` — no `:src` or `:fn` needed.
+
+---
+
+## Phase status
+
+| Phase | Description | Status |
+|---|---|---|
+| 0 | Fork baseline — meh2 binary, config dir, socket prefix | Complete |
+| 1 | Rhai poll/listen sources | Complete |
+| 2 | Rhai event handlers | Complete |
+| 3 | Rhai plugin system | Complete |
+| 4 | `(rhai-widget)` — Rhai-defined widget trees | Complete |
+| 4.5 | Plugin-registered defwidgets | Complete |
+| 5 | Hybrid yuck+Rhai (inline Rhai in attr expressions) | Planned |
 
 ---
 
 ## Acknowledgements
 
-- **[elkowar/eww](https://github.com/elkowar/eww)** — the original. yuck parser and concept. MIT licensed.
-- **[Ewwii-sh/ewwii](https://github.com/Ewwii-sh/ewwii)** — completed the GTK4 port that made this possible. GPL-3.0.
-- The eww community — years of configs, issues, and creativity that proved the concept.
+- **[meh](https://github.com/sickhate/meh)** — the direct parent project this forks from
+- **[elkowar/eww](https://github.com/elkowar/eww)** — the original yuck language and concept. MIT licensed.
+- **[Ewwii-sh/ewwii](https://github.com/Ewwii-sh/ewwii)** — completed the GTK4 port. GPL-3.0.
 
 ---
 

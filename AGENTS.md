@@ -43,9 +43,17 @@ Python has been eliminated entirely from the poll path.
 | `getPulsemixer.rhai` | pgrep | 2s | Replaces bash |
 | `getWallpapers.rhai` | magick via run_shell | 30s | Replaces Python; magick still a subprocess |
 | `getPlayers.rhai` | playerctl + curl + magick | 2s | Replaces 258-line Python; PIL → magick; regex → string ops |
+| `getSinks.rhai` | pactl list sinks | 3s | Replaces Python; split/index_of/sub_string instead of regex |
+| `getWifiNetworks.rhai` | nmcli | 15s | Replaces Python; deduplication via contains() |
+| `getPlayerPositionFmt.rhai` | playerctl | 2s | Replaces bash+awk; MM:SS formatting in Rhai |
+| `getMicVol.rhai` | wpctl (1 call) | 2s | Replaces bash+awk; single call for level+mute |
+| `getHotspot.rhai` | ideviceinfo + nmcli | 2s | Replaces bash |
+| `getImpala.rhai` | pgrep | 2s | Replaces bash |
 | **Still bash** | | | |
 | `network` | nmcli + /proc/net | 1s | Too complex; nmcli subprocess dominates anyway |
 | `getProtonVPN` | protonvpn status | 10s | `timeout 4` call; no benefit from Rhai wrapper |
+| `getWeather` | curl weather API | 600s | Long interval; no per-tick overhead concern |
+| `notif-focus.py` | Python onclick util | N/A | Not a poll; onclick-only — never in the poll path |
 
 ### Rhai API surface (crates/rhai-engine/src/inner.rs)
 - `read_file(path)` → string (silent empty on NotFound, warn on other errors)
