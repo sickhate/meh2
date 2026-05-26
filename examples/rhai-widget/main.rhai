@@ -8,12 +8,12 @@
 // inside the function; `:watch` tells the daemon which vars trigger a rebuild.
 
 // Returns a horizontal box with CPU and memory labels side by side.
+// CPU and MEM are injected from :watch vars — no cache file reads needed.
 fn status_bar() {
-    let cpu = read_file(env_var("HOME") + "/.cache/meh2/cpu_percent");
-    let mem = read_file(env_var("HOME") + "/.cache/meh2/mem_mb");
-
-    if cpu == "" { cpu = "?"; }
-    if mem == "" { mem = "?"; }
+    // CPU and MEM are injected into scope from the :watch attribute.
+    // Fall back to "?" if somehow missing.
+    let cpu = if CPU == "" { "?" } else { CPU };
+    let mem = if MEM == "" { "?" } else { MEM };
 
     #{
         type: "box",

@@ -44,7 +44,7 @@ impl RhaiEngine {
     pub fn call_fn(&self, _path: &std::path::Path, _config_dir: &std::path::Path, _fn_name: &str) -> anyhow::Result<String> {
         anyhow::bail!("meh2 built without `rhai` feature")
     }
-    pub fn call_fn_as_widget_data(&self, _path: &std::path::Path, _config_dir: &std::path::Path, _fn_name: &str) -> anyhow::Result<crate::RhaiWidgetData> {
+    pub fn call_fn_as_widget_data(&self, _path: &std::path::Path, _config_dir: &std::path::Path, _fn_name: &str, _vars: &std::collections::HashMap<String, String>) -> anyhow::Result<crate::RhaiWidgetData> {
         anyhow::bail!("meh2 built without `rhai` feature")
     }
     pub fn invalidate(&self, _path: &std::path::Path) {}

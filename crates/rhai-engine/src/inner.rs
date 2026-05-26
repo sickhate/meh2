@@ -166,11 +166,16 @@ impl RhaiEngine {
     ///
     /// The Rhai function must return a `Map` (#{...}) with at least a `"type"` key.
     /// Children are expressed as an `"children"` array of nested maps.
+    ///
+    /// `vars` is injected into the Rhai scope before the call so scripts can
+    /// reference watched var values directly (e.g. `CPU`, `MEM`) without reading
+    /// cache files.  Variable names must be valid Rhai identifiers.
     pub fn call_fn_as_widget_data(
         &self,
         path: &Path,
         config_dir: &Path,
         fn_name: &str,
+        vars: &std::collections::HashMap<String, String>,
     ) -> Result<crate::RhaiWidgetData> {
         let abs = if path.is_absolute() {
             path.to_path_buf()
@@ -180,6 +185,10 @@ impl RhaiEngine {
 
         let ast = self.get_or_compile(&abs)?;
         let mut scope = Scope::new();
+
+        for (k, v) in vars {
+            scope.push(k.clone(), rhai::Dynamic::from(v.clone()));
+        }
 
         let result: Dynamic = self.engine
             .call_fn::<Dynamic>(&mut scope, &ast, fn_name, ())

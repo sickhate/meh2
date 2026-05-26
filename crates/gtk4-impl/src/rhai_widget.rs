@@ -61,7 +61,15 @@ impl RhaiWidgetBinding {
             .map(|p| p.as_path())
             .unwrap_or(std::path::Path::new("."));
 
-        let data = match engine.call_fn_as_widget_data(&self.script_path, config_dir, &self.fn_name) {
+        let vars: std::collections::HashMap<String, String> = self.watched_vars
+            .iter()
+            .map(|v| {
+                let val = global_vars.get(v).map(|dv| dv.0.clone()).unwrap_or_default();
+                (v.0.clone(), val)
+            })
+            .collect();
+
+        let data = match engine.call_fn_as_widget_data(&self.script_path, config_dir, &self.fn_name, &vars) {
             Ok(d)  => d,
             Err(e) => { tracing::error!("rhai-widget {}: {}", self.fn_name, e); return; }
         };
@@ -121,18 +129,26 @@ pub fn build_rhai_widget(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::Wid
         anyhow::bail!("rhai-widget: Rhai engine not initialised");
     };
 
-    let data     = engine.call_fn_as_widget_data(&script_path, config_dir, &fn_name)?;
-    let inner_wu = rhai_data_to_widget_use(data, wu.span);
-    let inner    = build_widget(&inner_wu, ctx)?;
-
-    let container = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
-    container.append(&inner);
-
     let watched_vars: Vec<VarName> = watch
         .split_whitespace()
         .filter(|s| !s.is_empty())
         .map(|s| VarName(s.to_string()))
         .collect();
+
+    let initial_vars: std::collections::HashMap<String, String> = watched_vars
+        .iter()
+        .map(|v| {
+            let val = ctx.global_vars.get(v).map(|dv| dv.0.clone()).unwrap_or_default();
+            (v.0.clone(), val)
+        })
+        .collect();
+
+    let data     = engine.call_fn_as_widget_data(&script_path, config_dir, &fn_name, &initial_vars)?;
+    let inner_wu = rhai_data_to_widget_use(data, wu.span);
+    let inner    = build_widget(&inner_wu, ctx)?;
+
+    let container = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+    container.append(&inner);
 
     if !watched_vars.is_empty() {
         let last_watched_vals = watched_vars
