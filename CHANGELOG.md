@@ -4,6 +4,18 @@ All notable changes to meh2 are documented here.
 
 ## [Unreleased]
 
+### Runtime optimisations (2026-05-27)
+
+#### tokio runtime — thread count reduction
+- **`worker_threads(4)`** — was using all CPU cores (12); a bar app is I/O-bound, not CPU-bound. Saves 8 × 2 MB virtual stack entries.
+- **`thread_stack_size(512 KiB)`** — default tokio stack is 2 MB per thread; 512 KiB is safe for the async poll/listen tasks used here.
+- **Tokio feature set trimmed** — from `features = ["full"]` to an explicit list of what is actually used (`rt`, `rt-multi-thread`, `sync`, `time`, `process`, `net`, `fs`, `io-util`, `macros`, `signal`). Removes dead code from the `io-std`, `parking_lot`, and `test-util` sub-features.
+
+#### Config-level changes (applied in `~/.config/meh2/`)
+- **Eliminated `deflisten PLAYER_STATUS` and `deflisten PLAYER_TITLE`** — both used `playerctl --follow`, keeping two persistent subprocesses alive (~5 MB RSS each). Status field merged into `PLAYER_META` JSON; title accessed via `PLAYER_META.title`.
+- **Merged `PLAYER_POSITION` + `PLAYER_POSITION_FMT`** — both polled `playerctl position` every 2s. Combined into one defpoll returning `{"pos": <f64>, "fmt": "MM:SS"}`, halving playerctl calls.
+- **Interval bumps**: BLUETUITH_RUNNING 2s→5s, NCMPCPP 2s→3s, HOTSPOT/IMPALA 2s→5s, PULSEMIXER 2s→3s.
+
 ### meh2 — Rhai scripting + plugin system
 
 #### Phase 1 — Rhai poll/listen sources

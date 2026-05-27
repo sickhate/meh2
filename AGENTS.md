@@ -8,7 +8,7 @@
 
 -----
 
-## Current state (last updated 2026-05-26)
+## Current state (last updated 2026-05-27)
 
 **Phase 0 (fork baseline) complete.**
 **Phase 1 complete.** Rhai engine wired into `defpoll`/`deflisten`. `.rhai` files and `rhai:` inline sources work.
@@ -40,20 +40,23 @@ Python has been eliminated entirely from the poll path.
 | `getHeadphones.rhai` | bluetoothctl (1 call/device) | 5s | Replaces bash |
 | `getTorrra.rhai` | pgrep | 5s | Replaces bash |
 | `getOpencine.rhai` | pgrep | 5s | Replaces bash |
-| `getPulsemixer.rhai` | pgrep | 2s | Replaces bash |
+| `getPulsemixer.rhai` | pgrep | 3s | Replaces bash |
 | `getWallpapers.rhai` | magick via run_shell | 30s | Replaces Python; magick still a subprocess |
-| `getPlayers.rhai` | playerctl + curl + magick | 2s | Replaces 258-line Python; PIL → magick; regex → string ops |
+| `getPlayers.rhai` | playerctl + curl + magick | 5s | Replaces 258-line Python; PIL → magick; regex → string ops |
 | `getSinks.rhai` | pactl list sinks | 3s | Replaces Python; split/index_of/sub_string instead of regex |
 | `getWifiNetworks.rhai` | nmcli | 15s | Replaces Python; deduplication via contains() |
-| `getPlayerPositionFmt.rhai` | playerctl | 2s | Replaces bash+awk; MM:SS formatting in Rhai |
+| `getPlayerPositionFmt.rhai` | playerctl | 2s | Returns `{"pos": f64, "fmt": "MM:SS"}` — merged with PLAYER_POSITION defpoll |
 | `getMicVol.rhai` | wpctl (1 call) | 2s | Replaces bash+awk; single call for level+mute |
-| `getHotspot.rhai` | ideviceinfo + nmcli | 2s | Replaces bash |
-| `getImpala.rhai` | pgrep | 2s | Replaces bash |
+| `getHotspot.rhai` | ideviceinfo + nmcli | 5s | Replaces bash |
+| `getImpala.rhai` | pgrep | 5s | Replaces bash |
+| `player-meta.rhai` | bash + playerctl --follow | 3s | Includes `status` field — replaces `deflisten PLAYER_STATUS` + `deflisten PLAYER_TITLE` |
+| `wifi-available.rhai` | bash + nmcli monitor | 10s | Replaces `deflisten WIFI_STATE` |
+| `bt-history.rhai` | bash + bluetoothctl | 10s | Replaces `deflisten BT_STATE` |
+| `calendar.rhai` | Python + khal | 3s | Full calendar with month nav; replaces `deflisten CAL_DATA` |
 | **Still bash** | | | |
-| `network` | nmcli + /proc/net | 1s | Too complex; nmcli subprocess dominates anyway |
+| `network` | nmcli + /proc/net | 5s | Too complex; nmcli subprocess dominates anyway |
 | `getProtonVPN` | protonvpn status | 10s | `timeout 4` call; no benefit from Rhai wrapper |
 | `getWeather` | curl weather API | 600s | Long interval; no per-tick overhead concern |
-| `notif-focus.py` | Python onclick util | N/A | Not a poll; onclick-only — never in the poll path |
 
 ### Rhai API surface (crates/rhai-engine/src/inner.rs)
 - `read_file(path)` → string (silent empty on NotFound, warn on other errors)
@@ -650,6 +653,14 @@ Same as meh, plus:
 - **Timeout is non-negotiable.** A Rhai script that loops forever must not
   stall the daemon. The 500 ms operation limit is enforced by the engine
   itself; no spawned thread needed for the limit.
+- **tokio thread budget.** The daemon runtime is capped at `worker_threads(4)`
+  with `thread_stack_size(512 KiB)`. A bar app is I/O-bound; 12 workers
+  (the default on a 12-core machine) waste ~22 MB of virtual stack space for
+  no throughput benefit. Do not raise this without measuring.
+- **Prefer defpoll over deflisten.** `deflisten` keeps a subprocess alive
+  permanently (5–6 MB RSS each). `defpoll` spawns ephemerally. All
+  high-frequency data sources should be `defpoll`; only true streams
+  (cava visualiser, pacman inotify) warrant `deflisten`.
 
 -----
 
