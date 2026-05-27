@@ -653,10 +653,7 @@ Same as meh, plus:
 - **Timeout is non-negotiable.** A Rhai script that loops forever must not
   stall the daemon. The 500 ms operation limit is enforced by the engine
   itself; no spawned thread needed for the limit.
-- **tokio thread budget.** The daemon runtime is capped at `worker_threads(4)`
-  with `thread_stack_size(512 KiB)`. A bar app is I/O-bound; 12 workers
-  (the default on a 12-core machine) waste ~22 MB of virtual stack space for
-  no throughput benefit. Do not raise this without measuring.
+- **tokio thread budget.** The daemon uses the default `new_multi_thread()` (= number of CPU cores). Reducing `worker_threads` below the default caused IPC starvation in testing — do not set it manually without load testing first.
 - **Prefer defpoll over deflisten.** `deflisten` keeps a subprocess alive
   permanently (5–6 MB RSS each). `defpoll` spawns ephemerally. All
   high-frequency data sources should be `defpoll`; only true streams
