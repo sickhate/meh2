@@ -1,6 +1,6 @@
 # Maintainer: sickhate <syckin@icloud.com>
 pkgname=meh2
-pkgver=0.1.0.r29.8225b8b
+pkgver=0.1.0.r31.5ae02b7
 pkgrel=1
 pkgdesc="GTK4 Wayland widget system with Rhai scripting (meh2 fork of meh/eww)"
 arch=('x86_64')
@@ -35,7 +35,7 @@ build() {
 check() {
     cd "$srcdir/$pkgname"
     export RUSTUP_TOOLCHAIN=stable
-    cargo test --release --locked 2>/dev/null || true
+    cargo test --release --locked 2>/dev/null | grep -v '^$' | grep -v 'running 0 tests' | grep -v 'test result: ok. 0 passed' || true
 }
 
 package() {
