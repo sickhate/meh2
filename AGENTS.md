@@ -205,7 +205,7 @@ meh2/
 │   ├── rhai-bar/        # (Phase 1) Minimal bar using Rhai poll sources.
 │   └── plugin-demo/     # (Phase 3) Bar with a sample plugin loaded.
 ├── benches/
-└── CLAUDE.md            # This file.
+└── AGENTS.md            # This file.
 ```
 
 **Crate rules:**
@@ -450,7 +450,7 @@ no Rhai code linked. The `rhai` feature gates the entire `rhai-engine` crate.
 - [x] Update cache/log dirs `~/.cache/meh` → `~/.cache/meh2`
 - [x] Update socket/pid prefix `meh-server_` → `meh2-server_`
 - [x] Init new git repo, initial commit
-- [x] Write this CLAUDE.md
+- [x] Write this AGENTS.md
 
 meh2 at this point is a usable bar. `meh2 daemon && meh2 open bar` works
 with any config that worked with meh (point it at `~/.config/meh` via
@@ -622,7 +622,7 @@ patterns emerge.
 
 ## Coding conventions
 
-Inherits all conventions from meh's CLAUDE.md. Additions:
+Inherits all conventions from meh's AGENTS.md. Additions:
 
 - **Rhai API surface is minimal.** Every function registered on the `meh2`
   module needs a justification. Don't expose things "just in case".
