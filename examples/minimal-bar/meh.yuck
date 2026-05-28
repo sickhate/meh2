@@ -1,4 +1,4 @@
-; Minimal meh bar — clock + hostname.
+; Minimal meh bar — clock + hostname + date + quicklaunch demo.
 ; Launch: meh daemon && meh open bar
 
 (defpoll TIME
@@ -13,6 +13,10 @@
     :interval "3600s"
     "hostname -s")
 
+(defpoll USER
+    :interval "3600s"
+    "whoami")
+
 (defwindow bar
     :monitor 0
     :geometry (geometry
@@ -23,9 +27,17 @@
     :exclusive true
     :focusable false
     (centerbox :orientation "h" :class "bar"
+        :spacing 4
         (box :halign "start" :spacing 8
-            (label :class "hostname" :text HOSTNAME))
+            (label :class "hostname" :text HOSTNAME)
+            (label :class "username" :text USER))
         (box :halign "center"
             (label :class "date" :text DATE))
-        (box :halign "end"
+        (box :halign "end" :spacing 4
+            (button :onclick "xdg-open https://github.com" :class "launcher"
+                (label :text ""))
+            (button :onclick "foot" :class "launcher"
+                (label :text ""))
+            (button :onclick "xdg-open ." :class "launcher"
+                (label :text ""))
             (label :class "time" :text TIME))))

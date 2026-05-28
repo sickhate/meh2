@@ -434,6 +434,7 @@ Inherits meh's three profiles. Adds new features for the scripting layer.
 |---|---|---|---|
 | `rhai` | `rhai-engine` crate, `rhai` dep (~1–2 MB) | Zero — engine not created unless a `.rhai` source exists in config | `default` |
 | `rhai-plugins` | `plugin-host` crate, plugin discovery | Zero — no plugin loaded unless `~/.config/meh2/plugins/` exists and has entries | `default` |
+| `builtin-default-config` | `include_str!` of `examples/minimal-bar/` | Zero — only checked when no config file exists on disk | opt-in |
 
 **Rule:** `--no-default-features --features minimal` must produce a binary with
 no Rhai code linked. The `rhai` feature gates the entire `rhai-engine` crate.

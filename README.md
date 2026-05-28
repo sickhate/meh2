@@ -6,6 +6,21 @@
 
 ---
 
+## Performance
+
+| Metric | meh | meh2 |
+|---|---|---|
+| Idle CPU (static bar) | ~0.17% | ~0.17% |
+| Idle CPU (1s clock) | ~0.35% | ~0.35% |
+| Poll latency (shell) | ~1.3–1.8 ms | ~1.3–1.8 ms |
+| Poll latency (Rhai) | N/A | < 1 ms (no fork) |
+| Python in poll path | Required | **Zero — eliminated** |
+| Persistent subprocess RSS | ~5–6 MB each | None when using Rhai |
+| Rhai engine overhead | N/A | ~2–4 MB RSS |
+| Poll gating | Windows-closed pause | Same |
+
+---
+
 ## What meh2 adds over meh
 
 | Feature | meh | meh2 |

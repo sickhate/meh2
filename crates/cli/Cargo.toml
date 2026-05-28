@@ -24,6 +24,7 @@ shader          = ["meh_gtk4/shader"]
 granular-reload = ["meh_gtk4/granular-reload"]
 rhai            = ["meh_script_vars/rhai", "meh_gtk4/rhai"]
 rhai-plugins    = ["rhai", "meh_daemon/rhai-plugins"]
+builtin-default-config = ["meh_core/builtin-default-config"]
 # Expression language extensions (costly at link time)
 jq = ["simplexpr/jq", "yuck/jq", "meh_gtk4/jq"]
 tz = ["simplexpr/tz"]

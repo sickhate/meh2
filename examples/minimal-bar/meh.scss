@@ -9,6 +9,7 @@
     color: #cdd6f4;
     padding: 0 12px;
     min-height: 32px;
+    border-radius: 0 0 12px 12px;
 }
 
 .time {
@@ -22,4 +23,18 @@
 
 .hostname {
     color: #a6e3a1;
+}
+
+.username {
+    color: #f5c2e7;
+}
+
+.launcher {
+    background: #313244;
+    border-radius: 6px;
+    padding: 0 6px;
+}
+
+.launcher:hover {
+    background: #45475a;
 }

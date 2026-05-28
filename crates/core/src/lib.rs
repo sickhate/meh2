@@ -22,6 +22,12 @@ use yuck::{
     parser::ast::Ast,
 };
 
+#[cfg(feature = "builtin-default-config")]
+pub const DEFAULT_YUCK: &str = include_str!("../../../examples/minimal-bar/meh.yuck");
+
+#[cfg(feature = "builtin-default-config")]
+pub const DEFAULT_SCSS: &str = include_str!("../../../examples/minimal-bar/meh.scss");
+
 // ── Paths ─────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
@@ -40,7 +46,12 @@ impl MehPaths {
             bail!("Config path must be a directory, not a file");
         }
         if !config_dir.exists() {
-            bail!("Config directory {} does not exist", config_dir.display());
+            #[cfg(feature = "builtin-default-config")] {
+                std::fs::create_dir_all(config_dir)?;
+            }
+            #[cfg(not(feature = "builtin-default-config"))] {
+                bail!("Config directory {} does not exist", config_dir.display());
+            }
         }
         let config_dir = config_dir.canonicalize()?;
 
@@ -83,7 +94,7 @@ impl MehPaths {
             });
         let meh_dir = cfg_base.join("meh2");
         let eww_dir = cfg_base.join("eww");
-        let dir = if meh_dir.exists() { meh_dir } else { eww_dir };
+        let dir = if meh_dir.exists() { meh_dir } else if eww_dir.exists() { eww_dir } else { meh_dir };
         Self::from_config_dir(dir)
     }
 
@@ -224,7 +235,24 @@ impl MehConfig {
     pub fn load(paths: &MehPaths) -> Result<Self> {
         let main_file = paths.main_yuck_file();
         if !main_file.exists() {
-            bail!("Config file not found: {}", main_file.display());
+            #[cfg(feature = "builtin-default-config")] {
+                let mut db = FileDb::new(paths.config_dir.clone());
+                let yuck = db
+                    .load_yuck_str("builtin-default".into(), DEFAULT_YUCK.into())
+                    .and_then(|(_, ast)| Config::generate(&mut db, ast))
+                    .map_err(|e| anyhow::anyhow!("yuck parse error:\n{:#?}", e))?;
+                let mut var_state = VarState::new();
+                for (name, def) in &yuck.var_definitions {
+                    var_state.set(name.clone(), def.initial_value.clone());
+                }
+                for (name, def) in &yuck.script_vars {
+                    var_state.set(name.clone(), def.initial_value());
+                }
+                return Ok(Self { yuck, var_state });
+            }
+            #[cfg(not(feature = "builtin-default-config"))] {
+                bail!("Config file not found: {}", main_file.display());
+            }
         }
 
         let mut db = FileDb::new(paths.config_dir.clone());
@@ -302,7 +330,13 @@ impl YuckFileProvider for FileDb {
 
 pub fn compile_css(paths: &MehPaths) -> Option<String> {
     let scss = paths.scss_file()?;
-    let src = std::fs::read_to_string(&scss).ok()?;
+    let src = match std::fs::read_to_string(&scss) {
+        Ok(s) => s,
+        #[cfg(feature = "builtin-default-config")]
+        Err(_) => DEFAULT_SCSS.to_owned(),
+        #[cfg(not(feature = "builtin-default-config"))]
+        Err(_) => return None,
+    };
     let opts = grass::Options::default().load_path(&paths.config_dir);
     match grass::from_string(src, &opts) {
         Ok(css) => Some(css),

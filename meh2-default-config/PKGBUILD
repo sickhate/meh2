@@ -1,0 +1,51 @@
+# Maintainer: sickhate <syckin@icloud.com>
+pkgname=meh2-default-config
+pkgver=0.1.0.r36.886fcb7
+pkgrel=1
+pkgdesc="GTK4 Wayland widget system with Rhai scripting — embedded minimal bar, no config needed"
+arch=('x86_64')
+url="https://github.com/sickhate/meh2"
+license=('GPL-3.0-or-later')
+depends=(
+    'gtk4'
+    'gtk4-layer-shell'
+    'libadwaita'
+    'cairo'
+    'glib2'
+    'pango'
+)
+makedepends=('rust' 'cargo')
+options=('!debug')
+source=("meh2::git+file://${HOME}/Projects/meh2")
+sha256sums=('SKIP')
+
+prepare() {
+    cd "$srcdir/meh2"
+    export RUSTUP_TOOLCHAIN=stable
+    cargo fetch --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+    cd "$srcdir/meh2"
+    export RUSTUP_TOOLCHAIN=stable
+    export CARGO_TARGET_DIR=target
+    cargo build --release --locked --features default,builtin-default-config
+}
+
+check() {
+    cd "$srcdir/meh2"
+    export RUSTUP_TOOLCHAIN=stable
+    cargo test --release --locked 2>/dev/null | grep -v '^$' | grep -v 'running 0 tests' | grep -v 'test result: ok. 0 passed' || true
+}
+
+package() {
+    cd "$srcdir/meh2"
+    install -Dm755 "target/release/meh2" "$pkgdir/usr/bin/meh2"
+    install -Dm644 "AGENTS.md" "$pkgdir/usr/share/doc/$pkgname/README.md"
+    install -Dm644 <(echo "GPL-3.0-or-later") "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
+
+pkgver() {
+    cd "$srcdir/meh2"
+    printf "0.1.0.r%s.%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+}

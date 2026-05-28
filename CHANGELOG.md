@@ -4,6 +4,12 @@ All notable changes to meh2 are documented here.
 
 ## [Unreleased]
 
+### Added
+- **`builtin-default-config` Cargo feature** — embeds `examples/minimal-bar/` yuck + SCSS into the binary. When no `~/.config/meh2/` config exists, the embedded minimal bar (clock, hostname, date, username, quicklaunch icons) is used automatically. Feature is opt-in (`--features builtin-default-config`), not part of any default profile.
+- **`meh2-default-config/` PKGBUILD** — variant that builds with `builtin-default-config` for AUR. `makepkg -si` produces a `meh2` binary that works out of the box with zero configuration.
+- **Performance section in README** — documents idle CPU, poll latency, Python elimination, RSS savings in a comparison table.
+- **Minimal bar updated** — rounded bottom edges (`border-radius: 0 0 12px`), username via `whoami` poll on the left end, quicklaunch icon buttons (browser ``, terminal ``, file manager ``) for config reference.
+
 ### Fixed
 - **CI: gtk4 version requirement downgraded from v4_18 to v4_14** — same fix as meh. Required GTK ≥ 4.18 but Ubuntu 24.04 has 4.14.5. No v4_16+ APIs used, so `v4_14` works on both Ubuntu CI and Arch Linux (GTK 4.18+).
 - **CI: branch trigger fixed** — workflow was listening for pushes to `main` but the default branch is `master`. CI never fired.
