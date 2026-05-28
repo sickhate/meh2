@@ -6,7 +6,7 @@
 //!
 //! - `plugin.toml` — manifest declaring the plugin's name, version, and vars.
 //! - `main.rhai`   — Rhai script exporting `fn get_<VARNAME>() -> String` for
-//!                   each declared var.
+//!   each declared var.
 //!
 //! # Feature gate
 //! This module is a no-op when the `rhai-plugins` feature is disabled.
