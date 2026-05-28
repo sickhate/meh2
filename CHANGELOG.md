@@ -4,6 +4,13 @@ All notable changes to meh2 are documented here.
 
 ## [Unreleased]
 
+### Fixed
+- **CI: gtk4 version requirement downgraded from v4_18 to v4_14** — same fix as meh. Required GTK ≥ 4.18 but Ubuntu 24.04 has 4.14.5. No v4_16+ APIs used, so `v4_14` works on both Ubuntu CI and Arch Linux (GTK 4.18+).
+- **CI: branch trigger fixed** — workflow was listening for pushes to `main` but the default branch is `master`. CI never fired.
+- **CI: `-Dintrospection=false` added to gtk4-layer-shell meson build** — `gobject-introspection-1.0` not available on Ubuntu 24.04 runner.
+- **CI: `libadwaita-1-dev` added to system dependencies** — needed by `libadwaita-sys` for the `animations` feature.
+- **CI: clippy fixes** — `collapsible_if` and `too_many_arguments` in `plugin-host/src/inner.rs`, `doc_overindented_list_items` in `plugin-host/src/lib.rs`.
+
 ### Runtime optimisations (2026-05-27)
 
 #### tokio runtime — thread count reduction
