@@ -27,9 +27,16 @@ pub(crate) mod names {
 #[derive(Debug)]
 pub enum IconResult {
     /// Named icon (possibly with a custom theme search path, or an absolute file path).
-    Named { name: String, theme_path: Option<String> },
+    Named {
+        name: String,
+        theme_path: Option<String>,
+    },
     /// Raw RGBA32 pixmap data (ARGB32 already converted).
-    Pixmap { width: i32, height: i32, rgba: Vec<u8> },
+    Pixmap {
+        width: i32,
+        height: i32,
+        rgba: Vec<u8>,
+    },
     /// No icon available; the GTK thread should show a fallback.
     Missing,
 }

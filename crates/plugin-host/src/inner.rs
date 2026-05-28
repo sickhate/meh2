@@ -3,8 +3,8 @@
 use std::{
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc,
+        atomic::{AtomicBool, Ordering},
     },
     time::Duration,
 };
@@ -25,8 +25,8 @@ static PLUGIN_SCRIPTS: OnceCell<Vec<PathBuf>> = OnceCell::new();
 // ── Discovery ─────────────────────────────────────────────────────────────────
 
 struct LoadedPlugin {
-    dir:      PathBuf,
-    script:   PathBuf,
+    dir: PathBuf,
+    script: PathBuf,
     manifest: PluginManifest,
 }
 
@@ -39,14 +39,16 @@ fn discover(config_dir: &Path) -> Vec<LoadedPlugin> {
     let mut plugins = Vec::new();
 
     for plugins_dir in &search {
-        let Ok(entries) = std::fs::read_dir(plugins_dir) else { continue };
+        let Ok(entries) = std::fs::read_dir(plugins_dir) else {
+            continue;
+        };
         for entry in entries.flatten() {
             let dir = entry.path();
             if !dir.is_dir() {
                 continue;
             }
             let manifest_path = dir.join("plugin.toml");
-            let script_path   = dir.join("main.rhai");
+            let script_path = dir.join("main.rhai");
 
             if !manifest_path.exists() || !script_path.exists() {
                 tracing::warn!(
@@ -57,14 +59,14 @@ fn discover(config_dir: &Path) -> Vec<LoadedPlugin> {
             }
 
             let raw = match std::fs::read_to_string(&manifest_path) {
-                Ok(s)  => s,
+                Ok(s) => s,
                 Err(e) => {
                     tracing::error!("plugin-host: {}: read plugin.toml: {}", dir.display(), e);
                     continue;
                 }
             };
             let manifest: PluginManifest = match toml::from_str(&raw) {
-                Ok(m)  => m,
+                Ok(m) => m,
                 Err(e) => {
                     tracing::error!("plugin-host: {}: parse plugin.toml: {}", dir.display(), e);
                     continue;
@@ -77,7 +79,11 @@ fn discover(config_dir: &Path) -> Vec<LoadedPlugin> {
                 manifest.version,
                 manifest.vars.len()
             );
-            plugins.push(LoadedPlugin { dir, script: script_path, manifest });
+            plugins.push(LoadedPlugin {
+                dir,
+                script: script_path,
+                manifest,
+            });
         }
     }
 
@@ -122,12 +128,19 @@ pub fn start_plugins(
                 );
                 continue;
             }
-            tracing::info!("plugin-host: registered widget `{}` from `{}`", w.name, plugin.manifest.name);
-            widget_registry.insert(w.name.clone(), meh_rhai_engine::RhaiWidgetDef {
-                script_path:   plugin.script.clone(),
-                fn_name:       w.fn_name.clone(),
-                default_watch: w.default_watch.clone(),
-            });
+            tracing::info!(
+                "plugin-host: registered widget `{}` from `{}`",
+                w.name,
+                plugin.manifest.name
+            );
+            widget_registry.insert(
+                w.name.clone(),
+                meh_rhai_engine::RhaiWidgetDef {
+                    script_path: plugin.script.clone(),
+                    fn_name: w.fn_name.clone(),
+                    default_watch: w.default_watch.clone(),
+                },
+            );
         }
     }
 
@@ -144,14 +157,14 @@ pub fn start_plugins(
                 continue;
             }
 
-            let interval   = Duration::from_secs(var_decl.interval.unwrap_or(60));
-            let var_name   = VarName(var_decl.name.clone());
-            let fn_name    = format!("get_{}", var_decl.name);
-            let script     = plugin.script.clone();
+            let interval = Duration::from_secs(var_decl.interval.unwrap_or(60));
+            let var_name = VarName(var_decl.name.clone());
+            let fn_name = format!("get_{}", var_decl.name);
+            let script = plugin.script.clone();
             let plugin_dir = plugin.dir.clone();
-            let tx2        = tx.clone();
-            let sd2        = shutdown.resubscribe();
-            let wo2        = windows_open.clone();
+            let tx2 = tx.clone();
+            let sd2 = shutdown.resubscribe();
+            let wo2 = windows_open.clone();
 
             tokio::spawn(run_plugin_var(
                 script, plugin_dir, fn_name, var_name, interval, tx2, sd2, wo2,
@@ -165,8 +178,12 @@ pub fn start_plugins(
 /// Invalidate all plugin ASTs from the Rhai cache so next poll tick recompiles.
 /// Call this when `meh2 reload` fires to pick up changed plugin scripts.
 pub fn invalidate_all() {
-    let Some(scripts) = PLUGIN_SCRIPTS.get() else { return };
-    let Some(engine)  = meh_rhai_engine::global() else { return };
+    let Some(scripts) = PLUGIN_SCRIPTS.get() else {
+        return;
+    };
+    let Some(engine) = meh_rhai_engine::global() else {
+        return;
+    };
     for path in scripts {
         engine.invalidate(path);
     }
@@ -181,10 +198,7 @@ fn spawn_file_watcher(scripts: Vec<PathBuf>) {
     let watcher_result = RecommendedWatcher::new(
         move |result: notify::Result<Event>| {
             let Ok(event) = result else { return };
-            if !matches!(
-                event.kind,
-                EventKind::Modify(_) | EventKind::Create(_)
-            ) {
+            if !matches!(event.kind, EventKind::Modify(_) | EventKind::Create(_)) {
                 return;
             }
             for path in event.paths {
@@ -197,8 +211,11 @@ fn spawn_file_watcher(scripts: Vec<PathBuf>) {
     );
 
     let mut watcher = match watcher_result {
-        Ok(w)  => w,
-        Err(e) => { tracing::warn!("plugin-host: file watcher unavailable: {}", e); return; }
+        Ok(w) => w,
+        Err(e) => {
+            tracing::warn!("plugin-host: file watcher unavailable: {}", e);
+            return;
+        }
     };
 
     for script in &scripts {
@@ -223,12 +240,12 @@ fn spawn_file_watcher(scripts: Vec<PathBuf>) {
 // ── Poll task ─────────────────────────────────────────────────────────────────
 
 async fn run_plugin_var(
-    script:     PathBuf,
+    script: PathBuf,
     plugin_dir: PathBuf,
-    fn_name:    String,
-    var_name:   VarName,
-    interval:   Duration,
-    tx:         VarTx,
+    fn_name: String,
+    var_name: VarName,
+    interval: Duration,
+    tx: VarTx,
     mut shutdown: tokio::sync::broadcast::Receiver<()>,
     windows_open: Arc<AtomicBool>,
 ) {
@@ -258,26 +275,26 @@ async fn run_plugin_var(
 }
 
 async fn call_and_send(
-    engine:     &Arc<meh_rhai_engine::RhaiEngine>,
-    script:     &Path,
+    engine: &Arc<meh_rhai_engine::RhaiEngine>,
+    script: &Path,
     plugin_dir: &Path,
-    fn_name:    &str,
-    var_name:   &VarName,
-    tx:         &VarTx,
+    fn_name: &str,
+    var_name: &VarName,
+    tx: &VarTx,
 ) {
-    let engine     = engine.clone();
-    let script     = script.to_path_buf();
+    let engine = engine.clone();
+    let script = script.to_path_buf();
     let plugin_dir = plugin_dir.to_path_buf();
-    let fn_name    = fn_name.to_string();
+    let fn_name = fn_name.to_string();
 
-    let result = tokio::task::spawn_blocking(move || {
-        engine.call_fn(&script, &plugin_dir, &fn_name)
-    })
-    .await;
+    let result =
+        tokio::task::spawn_blocking(move || engine.call_fn(&script, &plugin_dir, &fn_name)).await;
 
     match result {
-        Ok(Ok(val))  => { let _ = tx.send((var_name.clone(), DynVal::from_string(val))); }
-        Ok(Err(e))   => tracing::error!("plugin var {}: {}", var_name, e),
-        Err(e)       => tracing::error!("plugin var {}: task panicked: {}", var_name, e),
+        Ok(Ok(val)) => {
+            let _ = tx.send((var_name.clone(), DynVal::from_string(val)));
+        }
+        Ok(Err(e)) => tracing::error!("plugin var {}: {}", var_name, e),
+        Err(e) => tracing::error!("plugin var {}: task panicked: {}", var_name, e),
     }
 }

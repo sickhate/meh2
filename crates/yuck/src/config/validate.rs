@@ -11,7 +11,12 @@ pub enum ValidationError {
     AccidentalBuiltinOverride(Span, String),
 
     #[error("Missing attribute `{arg_name}` in use of widget `{widget_name}`")]
-    MissingAttr { widget_name: String, arg_name: AttrName, arg_list_span: Option<Span>, use_span: Span },
+    MissingAttr {
+        widget_name: String,
+        arg_name: AttrName,
+        arg_list_span: Option<Span>,
+        use_span: Span,
+    },
 
     #[error("No variable named `{name}` in scope")]
     UnknownVariable {
@@ -41,9 +46,19 @@ pub fn validate(config: &Config, additional_globals: Vec<VarName>) -> Result<(),
     for window in config.window_definitions.values() {
         let local_var_names: HashSet<VarName> = std::iter::empty()
             .chain(var_names.iter().cloned())
-            .chain(window.expected_args.iter().map(|x| VarName::from(x.name.clone())))
+            .chain(
+                window
+                    .expected_args
+                    .iter()
+                    .map(|x| VarName::from(x.name.clone())),
+            )
             .collect();
-        validate_variables_in_widget_use(&config.widget_definitions, &local_var_names, &window.widget, false)?;
+        validate_variables_in_widget_use(
+            &config.widget_definitions,
+            &local_var_names,
+            &window.widget,
+            false,
+        )?;
     }
     for def in config.widget_definitions.values() {
         validate_widget_definition(&config.widget_definitions, &var_names, def)?;
@@ -73,10 +88,9 @@ pub fn validate_variables_in_widget_use(
     if let WidgetUse::Basic(widget) = widget {
         let matching_definition = defs.get(&widget.name);
         if let Some(matching_def) = matching_definition {
-            let missing_arg = matching_def
-                .expected_args
-                .iter()
-                .find(|expected| !expected.optional && !widget.attrs.attrs.contains_key(&expected.name));
+            let missing_arg = matching_def.expected_args.iter().find(|expected| {
+                !expected.optional && !widget.attrs.attrs.contains_key(&expected.name)
+            });
             if let Some(missing_arg) = missing_arg {
                 return Err(ValidationError::MissingAttr {
                     widget_name: widget.name.clone(),
@@ -87,15 +101,21 @@ pub fn validate_variables_in_widget_use(
             }
         }
         let values = widget.attrs.attrs.values();
-        let unknown_var = values.filter_map(|value| value.value.as_simplexpr().ok()).find_map(|expr: SimplExpr| {
-            expr.var_refs_with_span()
-                .iter()
-                .cloned()
-                .map(|(span, var_ref)| (span, var_ref.clone()))
-                .find(|(_, var_ref)| !variables.contains(var_ref))
-        });
+        let unknown_var = values
+            .filter_map(|value| value.value.as_simplexpr().ok())
+            .find_map(|expr: SimplExpr| {
+                expr.var_refs_with_span()
+                    .iter()
+                    .cloned()
+                    .map(|(span, var_ref)| (span, var_ref.clone()))
+                    .find(|(_, var_ref)| !variables.contains(var_ref))
+            });
         if let Some((span, var)) = unknown_var {
-            return Err(ValidationError::UnknownVariable { span, name: var, in_definition: is_in_definition });
+            return Err(ValidationError::UnknownVariable {
+                span,
+                name: var,
+                in_definition: is_in_definition,
+            });
         }
 
         for child in widget.children.iter() {
@@ -110,7 +130,11 @@ pub fn validate_variables_in_widget_use(
             .map(|(span, var_ref)| (span, var_ref.clone()))
             .find(|(_, var_ref)| var_ref != &widget.element_name && !variables.contains(var_ref));
         if let Some((span, var)) = unknown_var {
-            return Err(ValidationError::UnknownVariable { span, name: var, in_definition: is_in_definition });
+            return Err(ValidationError::UnknownVariable {
+                span,
+                name: var,
+                in_definition: is_in_definition,
+            });
         }
         let mut variables = variables.clone();
         variables.insert(widget.element_name.clone());

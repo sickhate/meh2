@@ -90,7 +90,11 @@ impl Ast {
             // Ast::Array(span, elements) => todo!()
             Ast::Symbol(span, x) => Ok(SimplExpr::VarRef(*span, VarName(x.clone()))),
             Ast::SimplExpr(_span, x) => Ok(x.clone()),
-            _ => Err(AstError::WrongExprType(self.span(), AstType::IntoPrimitive, self.expr_type())),
+            _ => Err(AstError::WrongExprType(
+                self.span(),
+                AstType::IntoPrimitive,
+                self.expr_type(),
+            )),
         }
     }
 

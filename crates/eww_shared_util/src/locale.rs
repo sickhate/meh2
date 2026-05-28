@@ -8,5 +8,10 @@ pub fn get_locale() -> Locale {
     var("LC_ALL")
         .or_else(|_| var("LC_TIME"))
         .or_else(|_| var("LANG"))
-        .map_or(Locale::POSIX, |v| v.split('.').next().and_then(|x| x.try_into().ok()).unwrap_or_default())
+        .map_or(Locale::POSIX, |v| {
+            v.split('.')
+                .next()
+                .and_then(|x| x.try_into().ok())
+                .unwrap_or_default()
+        })
 }

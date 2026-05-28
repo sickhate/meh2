@@ -3,11 +3,11 @@
 
 use std::collections::HashMap;
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use eww_shared_util::{AttrName, VarName};
 use gtk4::{gdk, prelude::*};
 use meh_core::EvalCtx;
-use simplexpr::{dynval::DynVal, SimplExpr};
+use simplexpr::{SimplExpr, dynval::DynVal};
 use std::cell::RefCell;
 use yuck::config::{
     widget_definition::WidgetDefinition,
@@ -20,9 +20,9 @@ use yuck::config::{
 /// Holds the unevaluated expression, the local scope it was captured in, and a setter closure.
 /// Call `update` when global vars change; the setter fires only if the evaluated value changed.
 pub struct Binding {
-    expr:     SimplExpr,
-    scope:    HashMap<VarName, DynVal>,
-    setter:   Box<dyn FnMut(String) + 'static>,
+    expr: SimplExpr,
+    scope: HashMap<VarName, DynVal>,
+    setter: Box<dyn FnMut(String) + 'static>,
     last_val: String,
 }
 
@@ -44,12 +44,12 @@ impl Binding {
 /// A live reactive `for` loop binding.
 /// When the elements expression changes, clears and rebuilds the container children.
 pub struct LoopBinding {
-    expr:         SimplExpr,
-    scope:        HashMap<VarName, DynVal>,
-    lp:           LoopWidgetUse,
-    widget_defs:  HashMap<String, WidgetDefinition>,
-    container:    gtk4::Box,
-    last_val:     String,
+    expr: SimplExpr,
+    scope: HashMap<VarName, DynVal>,
+    lp: LoopWidgetUse,
+    widget_defs: HashMap<String, WidgetDefinition>,
+    container: gtk4::Box,
+    last_val: String,
 }
 
 impl LoopBinding {
@@ -57,7 +57,9 @@ impl LoopBinding {
         let mut all = global_vars.clone();
         all.extend(self.scope.clone());
         let new_val = self.expr.eval(&all).map(|v| v.0).unwrap_or_default();
-        if new_val == self.last_val { return false; }
+        if new_val == self.last_val {
+            return false;
+        }
         self.last_val = new_val.clone();
 
         while let Some(child) = self.container.first_child() {
@@ -114,8 +116,7 @@ fn maybe_bind<F>(
     scope: &HashMap<VarName, DynVal>,
     initial: String,
     setter: F,
-)
-where
+) where
     F: FnMut(String) + 'static,
 {
     if let Some(entry) = attrs.attrs.get(&AttrName(attr_name.to_string()))
@@ -137,27 +138,29 @@ where
 
 /// Register a reactive loop binding — fires when `lp.elements_expr` references any variable.
 fn register_loop_binding(lp: &LoopWidgetUse, ctx: &EvalCtx, container: gtk4::Box, initial: String) {
-    if lp.elements_expr.collect_var_refs().is_empty() { return; }
+    if lp.elements_expr.collect_var_refs().is_empty() {
+        return;
+    }
     BINDING_COLLECTOR.with(|col| {
         if let Some(bindings) = col.borrow_mut().as_mut() {
             bindings.push(AnyBinding::Loop(LoopBinding {
-                expr:        lp.elements_expr.clone(),
-                scope:       ctx.scope.clone(),
-                lp:          lp.clone(),
+                expr: lp.elements_expr.clone(),
+                scope: ctx.scope.clone(),
+                lp: lp.clone(),
                 widget_defs: ctx.widget_defs.clone(),
                 container,
-                last_val:    initial,
+                last_val: initial,
             }));
         }
     });
 }
 
 pub mod app;
-pub mod window;
 pub mod css;
 mod launcher;
 #[cfg(feature = "rhai")]
 mod rhai_widget;
+pub mod window;
 
 pub use app::{App, Cmd, connect_color_scheme, init_platform};
 
@@ -172,8 +175,7 @@ pub fn set_tokio_handle(handle: tokio::runtime::Handle) {
     let _ = TOKIO_HANDLE.set(handle);
 }
 
-static CONFIG_DIR: once_cell::sync::OnceCell<std::path::PathBuf> =
-    once_cell::sync::OnceCell::new();
+static CONFIG_DIR: once_cell::sync::OnceCell<std::path::PathBuf> = once_cell::sync::OnceCell::new();
 
 /// Called by the daemon so event handlers can resolve relative `.rhai` paths.
 pub fn set_config_dir(dir: std::path::PathBuf) {
@@ -185,8 +187,8 @@ pub fn set_config_dir(dir: std::path::PathBuf) {
 pub fn build_widget(wu: &WidgetUse, ctx: &EvalCtx) -> Result<gtk4::Widget> {
     match wu {
         WidgetUse::Basic(basic) => build_basic(basic, ctx),
-        WidgetUse::Loop(lp)     => build_loop(lp, ctx),
-        WidgetUse::Children(_)  => {
+        WidgetUse::Loop(lp) => build_loop(lp, ctx),
+        WidgetUse::Children(_) => {
             // (children) outside a defwidget — render empty box as placeholder
             Ok(gtk4::Box::new(gtk4::Orientation::Horizontal, 0).upcast())
         }
@@ -196,7 +198,10 @@ pub fn build_widget(wu: &WidgetUse, ctx: &EvalCtx) -> Result<gtk4::Widget> {
 fn populate_loop_container(container: &gtk4::Box, lp: &LoopWidgetUse, ctx: &EvalCtx) {
     let items_val = match ctx.eval_expr(&lp.elements_expr) {
         Ok(v) => v,
-        Err(e) => { tracing::warn!("loop expr error: {}", e); return; }
+        Err(e) => {
+            tracing::warn!("loop expr error: {}", e);
+            return;
+        }
     };
     let items = items_val.as_json_array().unwrap_or_default();
     for item in items {
@@ -206,13 +211,18 @@ fn populate_loop_container(container: &gtk4::Box, lp: &LoopWidgetUse, ctx: &Eval
         };
         let mut extra = HashMap::new();
         // Loop variable always takes the full item value (JSON object/string/number).
-        extra.insert(lp.element_name.clone(), DynVal::from_string(item_str.clone()));
+        extra.insert(
+            lp.element_name.clone(),
+            DynVal::from_string(item_str.clone()),
+        );
         // Flatten object fields into scope for convenience, but never overwrite
         // the loop variable itself (e.g. `day` loop var + `day` field in the object).
         if let serde_json::Value::Object(map) = &item {
             for (k, v) in map {
                 let key = VarName(k.clone());
-                if key == lp.element_name { continue; }
+                if key == lp.element_name {
+                    continue;
+                }
                 let val_str = match v {
                     serde_json::Value::String(s) => s.clone(),
                     other => other.to_string(),
@@ -234,7 +244,11 @@ fn build_loop(lp: &LoopWidgetUse, ctx: &EvalCtx) -> Result<gtk4::Widget> {
     build_loop_oriented(lp, ctx, gtk4::Orientation::Vertical)
 }
 
-fn build_loop_oriented(lp: &LoopWidgetUse, ctx: &EvalCtx, orientation: gtk4::Orientation) -> Result<gtk4::Widget> {
+fn build_loop_oriented(
+    lp: &LoopWidgetUse,
+    ctx: &EvalCtx,
+    orientation: gtk4::Orientation,
+) -> Result<gtk4::Widget> {
     let items_val = ctx.eval_expr(&lp.elements_expr)?;
     let container = gtk4::Box::new(orientation, 0);
     populate_loop_container(&container, lp, ctx);
@@ -249,43 +263,50 @@ fn build_basic(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::Widget> {
     }
 
     let w: gtk4::Widget = match wu.name.as_str() {
-        "box"              => build_box(wu, ctx)?.upcast(),
-        "centerbox"        => build_centerbox(wu, ctx)?.upcast(),
-        "eventbox"         => build_eventbox(wu, ctx)?.upcast(),
-        "label"            => build_label(wu, ctx)?.upcast(),
-        "button"           => build_button(wu, ctx)?.upcast(),
-        "image"            => build_image(wu, ctx)?,
-        "scale"            => build_scale(wu, ctx)?.upcast(),
-        "progress"         => build_progress(wu, ctx)?.upcast(),
-        "circular-progress"=> build_circular_progress(wu, ctx)?,
-        "scroll"           => build_scroll(wu, ctx)?.upcast(),
-        "overlay"          => build_overlay(wu, ctx)?.upcast(),
-        "revealer"         => build_revealer(wu, ctx)?.upcast(),
-        "stack"            => build_stack(wu, ctx)?.upcast(),
-        "expander"         => build_expander(wu, ctx)?.upcast(),
-        "checkbox"         => build_checkbox(wu, ctx)?.upcast(),
-        "input"            => build_input(wu, ctx)?.upcast(),
-        "calendar"         => build_calendar(wu, ctx)?.upcast(),
-        "combo-box-text"   => build_combo_box_text(wu, ctx)?.upcast(),
-        "color-button"     => build_color_button(wu, ctx)?.upcast(),
-        "literal"          => build_literal(wu, ctx)?.upcast(),
-        "launcher"         => launcher::build_launcher(wu, ctx)?,
+        "box" => build_box(wu, ctx)?.upcast(),
+        "centerbox" => build_centerbox(wu, ctx)?.upcast(),
+        "eventbox" => build_eventbox(wu, ctx)?.upcast(),
+        "label" => build_label(wu, ctx)?.upcast(),
+        "button" => build_button(wu, ctx)?.upcast(),
+        "image" => build_image(wu, ctx)?,
+        "scale" => build_scale(wu, ctx)?.upcast(),
+        "progress" => build_progress(wu, ctx)?.upcast(),
+        "circular-progress" => build_circular_progress(wu, ctx)?,
+        "scroll" => build_scroll(wu, ctx)?.upcast(),
+        "overlay" => build_overlay(wu, ctx)?.upcast(),
+        "revealer" => build_revealer(wu, ctx)?.upcast(),
+        "stack" => build_stack(wu, ctx)?.upcast(),
+        "expander" => build_expander(wu, ctx)?.upcast(),
+        "checkbox" => build_checkbox(wu, ctx)?.upcast(),
+        "input" => build_input(wu, ctx)?.upcast(),
+        "calendar" => build_calendar(wu, ctx)?.upcast(),
+        "combo-box-text" => build_combo_box_text(wu, ctx)?.upcast(),
+        "color-button" => build_color_button(wu, ctx)?.upcast(),
+        "literal" => build_literal(wu, ctx)?.upcast(),
+        "launcher" => launcher::build_launcher(wu, ctx)?,
         #[cfg(feature = "systray")]
-        "systray"          => build_systray(wu, ctx)?.upcast(),
+        "systray" => build_systray(wu, ctx)?.upcast(),
         #[cfg(feature = "shader")]
-        "shader"           => build_shader(wu, ctx)?.upcast(),
-        "rhai-widget"      => {
+        "shader" => build_shader(wu, ctx)?.upcast(),
+        "rhai-widget" => {
             #[cfg(feature = "rhai")]
-            { rhai_widget::build_rhai_widget(wu, ctx)? }
+            {
+                rhai_widget::build_rhai_widget(wu, ctx)?
+            }
             #[cfg(not(feature = "rhai"))]
-            { bail!("`rhai-widget` requires the `rhai` feature") }
+            {
+                bail!("`rhai-widget` requires the `rhai` feature")
+            }
         }
         unknown => {
             #[cfg(feature = "rhai")]
             if let Some(def) = meh_rhai_engine::get_widget_def(unknown) {
                 return rhai_widget::build_rhai_defwidget(wu, def, ctx);
             }
-            bail!("Unknown widget: `{}`. Is it defined with `defwidget`?", unknown)
+            bail!(
+                "Unknown widget: `{}`. Is it defined with `defwidget`?",
+                unknown
+            )
         }
     };
 
@@ -303,7 +324,10 @@ fn expand_defwidget(
     for arg_spec in &def.expected_args {
         let key = &arg_spec.name;
         let value = if let Some(entry) = wu.attrs.attrs.get(key) {
-            entry.value.as_simplexpr().ok()
+            entry
+                .value
+                .as_simplexpr()
+                .ok()
                 .and_then(|expr| ctx.eval_expr(&expr).ok())
                 .unwrap_or_else(|| DynVal::from_string(String::new()))
         } else if arg_spec.optional {
@@ -317,7 +341,9 @@ fn expand_defwidget(
     // Handle `children` by building them in the outer context and storing somehow.
     // For now build children in caller context and pass as a GTK widget in a
     // special scope entry (not ideal but functional for simple cases).
-    let children_widgets: Vec<gtk4::Widget> = wu.children.iter()
+    let children_widgets: Vec<gtk4::Widget> = wu
+        .children
+        .iter()
         .filter_map(|c| build_widget(c, ctx).ok())
         .collect();
 
@@ -347,7 +373,8 @@ fn build_widget_with_children(
             let is_box = basic.name.as_str() == "box";
             let box_orientation = if is_box {
                 ctx.eval_attr_str(&basic.attrs, "orientation")
-                    .as_deref().map(parse_orientation)
+                    .as_deref()
+                    .map(parse_orientation)
                     .unwrap_or(gtk4::Orientation::Horizontal)
             } else {
                 gtk4::Orientation::Vertical
@@ -382,13 +409,17 @@ fn build_basic_with_prebuilt(
     let w: gtk4::Widget = match wu.name.as_str() {
         "box" => {
             let b = make_box_widget(wu, ctx)?;
-            for ch in prebuilt_children { b.append(ch); }
+            for ch in prebuilt_children {
+                b.append(ch);
+            }
             apply_common_props(&b, wu, ctx);
             b.upcast()
         }
         "eventbox" => {
             let b = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
-            for ch in prebuilt_children { b.append(ch); }
+            for ch in prebuilt_children {
+                b.append(ch);
+            }
             apply_common_props(&b, wu, ctx);
             b.upcast()
         }
@@ -407,13 +438,17 @@ fn apply_common_props(widget: &impl IsA<gtk4::Widget>, wu: &BasicWidgetUse, ctx:
     let attrs = &wu.attrs;
 
     if let Some(class) = ctx.eval_attr_str(attrs, "class") {
-        for c in class.split_whitespace() { widget.add_css_class(c); }
+        for c in class.split_whitespace() {
+            widget.add_css_class(c);
+        }
     }
     if let Some(style) = ctx.eval_attr_str(attrs, "style") {
         // Inline styles via gtk4 CssProvider per widget
         let provider = gtk4::CssProvider::new();
         provider.load_from_string(&format!("* {{ {} }}", style));
-        widget.style_context().add_provider(&provider, gtk4::STYLE_PROVIDER_PRIORITY_USER);
+        widget
+            .style_context()
+            .add_provider(&provider, gtk4::STYLE_PROVIDER_PRIORITY_USER);
     }
     if let Some(name) = ctx.eval_attr_str(attrs, "name") {
         widget.set_widget_name(&name);
@@ -454,7 +489,7 @@ fn apply_common_props(widget: &impl IsA<gtk4::Widget>, wu: &BasicWidgetUse, ctx:
         #[cfg(feature = "animations")]
         {
             let duration = ctx.eval_attr_i64(attrs, "animate-duration").unwrap_or(0) as u32;
-            let easing   = parse_adw_easing(ctx.eval_attr_str(attrs, "animate-easing").as_deref());
+            let easing = parse_adw_easing(ctx.eval_attr_str(attrs, "animate-easing").as_deref());
             if duration > 0 {
                 ensure_adw_init();
                 let anim_holder: std::rc::Rc<RefCell<Option<libadwaita::TimedAnimation>>> =
@@ -464,7 +499,9 @@ fn apply_common_props(widget: &impl IsA<gtk4::Widget>, wu: &BasicWidgetUse, ctx:
                 maybe_bind(attrs, "opacity", &ctx.scope, initial_str, move |v| {
                     if let Ok(f) = v.parse::<f64>() {
                         let to = f.clamp(0.0, 1.0);
-                        if let Some(p) = ah.borrow().as_ref() { p.pause(); }
+                        if let Some(p) = ah.borrow().as_ref() {
+                            p.pause();
+                        }
                         let from = wc.opacity();
                         let wc2 = wc.clone();
                         let target = libadwaita::CallbackAnimationTarget::new(move |val| {
@@ -480,7 +517,9 @@ fn apply_common_props(widget: &impl IsA<gtk4::Widget>, wu: &BasicWidgetUse, ctx:
             } else {
                 let wc = widget.upcast_ref::<gtk4::Widget>().clone();
                 maybe_bind(attrs, "opacity", &ctx.scope, initial_str, move |v| {
-                    if let Ok(f) = v.parse::<f64>() { wc.set_opacity(f.clamp(0.0, 1.0)); }
+                    if let Ok(f) = v.parse::<f64>() {
+                        wc.set_opacity(f.clamp(0.0, 1.0));
+                    }
                 });
             }
         }
@@ -488,7 +527,9 @@ fn apply_common_props(widget: &impl IsA<gtk4::Widget>, wu: &BasicWidgetUse, ctx:
         {
             let wc = widget.upcast_ref::<gtk4::Widget>().clone();
             maybe_bind(attrs, "opacity", &ctx.scope, initial_str, move |v| {
-                if let Ok(f) = v.parse::<f64>() { wc.set_opacity(f.clamp(0.0, 1.0)); }
+                if let Ok(f) = v.parse::<f64>() {
+                    wc.set_opacity(f.clamp(0.0, 1.0));
+                }
             });
         }
     }
@@ -508,19 +549,29 @@ fn apply_common_props(widget: &impl IsA<gtk4::Widget>, wu: &BasicWidgetUse, ctx:
 
     // Reactive bindings for properties that commonly reference variables.
     let wc = widget.upcast_ref::<gtk4::Widget>().clone();
-    maybe_bind(attrs, "visible", &ctx.scope,
+    maybe_bind(
+        attrs,
+        "visible",
+        &ctx.scope,
         widget.is_visible().to_string(),
-        move |v| wc.set_visible(v == "true"));
+        move |v| wc.set_visible(v == "true"),
+    );
 
     {
         let wc = widget.upcast_ref::<gtk4::Widget>().clone();
         let initial_class = ctx.eval_attr_str(attrs, "class").unwrap_or_default();
         let mut last: Vec<String> = initial_class.split_whitespace().map(String::from).collect();
-        for c in &last { widget.add_css_class(c); }
+        for c in &last {
+            widget.add_css_class(c);
+        }
         maybe_bind(attrs, "class", &ctx.scope, initial_class, move |new| {
-            for c in &last { wc.remove_css_class(c); }
+            for c in &last {
+                wc.remove_css_class(c);
+            }
             last = new.split_whitespace().map(String::from).collect();
-            for c in &last { wc.add_css_class(c); }
+            for c in &last {
+                wc.add_css_class(c);
+            }
         });
     }
 
@@ -533,9 +584,9 @@ fn apply_event_handlers(widget: &impl IsA<gtk4::Widget>, wu: &BasicWidgetUse, ct
     // Use EventControllerLegacy for click events — fires unconditionally on raw
     // GDK ButtonPress, unlike GestureClick which can be denied on passive/transparent
     // widgets (e.g. click-catcher). Matches GTK3 EventBox button-press-event semantics.
-    let onclick    = ctx.eval_attr_str(attrs, "onclick");
-    let onright    = ctx.eval_attr_str(attrs, "onrightclick");
-    let onmiddle   = ctx.eval_attr_str(attrs, "onmiddleclick");
+    let onclick = ctx.eval_attr_str(attrs, "onclick");
+    let onright = ctx.eval_attr_str(attrs, "onrightclick");
+    let onmiddle = ctx.eval_attr_str(attrs, "onmiddleclick");
     if onclick.is_some() || onright.is_some() || onmiddle.is_some() {
         let ctrl = gtk4::EventControllerLegacy::new();
         ctrl.connect_event(move |ctrl, event| {
@@ -549,9 +600,21 @@ fn apply_event_handlers(widget: &impl IsA<gtk4::Widget>, wu: &BasicWidgetUse, ct
                     .map(|e| e.button())
                     .unwrap_or(1);
                 match btn {
-                    1 => { if let Some(cmd) = &onclick  { spawn_cmd(cmd); } }
-                    3 => { if let Some(cmd) = &onright  { spawn_cmd(cmd); } }
-                    2 => { if let Some(cmd) = &onmiddle { spawn_cmd(cmd); } }
+                    1 => {
+                        if let Some(cmd) = &onclick {
+                            spawn_cmd(cmd);
+                        }
+                    }
+                    3 => {
+                        if let Some(cmd) = &onright {
+                            spawn_cmd(cmd);
+                        }
+                    }
+                    2 => {
+                        if let Some(cmd) = &onmiddle {
+                            spawn_cmd(cmd);
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -574,12 +637,16 @@ fn apply_event_handlers(widget: &impl IsA<gtk4::Widget>, wu: &BasicWidgetUse, ct
     }
     if let Some(cmd) = ctx.eval_attr_str(attrs, "onhover") {
         let ctrl = gtk4::EventControllerMotion::new();
-        ctrl.connect_enter(move |_, _, _| { spawn_cmd(&cmd); });
+        ctrl.connect_enter(move |_, _, _| {
+            spawn_cmd(&cmd);
+        });
         widget.add_controller(ctrl);
     }
     if let Some(cmd) = ctx.eval_attr_str(attrs, "onhoverlost") {
         let ctrl = gtk4::EventControllerMotion::new();
-        ctrl.connect_leave(move |_| { spawn_cmd(&cmd); });
+        ctrl.connect_leave(move |_| {
+            spawn_cmd(&cmd);
+        });
         widget.add_controller(ctrl);
     }
     if let Some(cmd) = ctx.eval_attr_str(attrs, "onkeypress") {
@@ -602,8 +669,10 @@ pub(crate) fn spawn_cmd(cmd: &str) {
         #[cfg(feature = "rhai")]
         {
             if let Some(engine) = meh_rhai_engine::global() {
-                let cmd  = cmd.to_owned();
-                let cdir = CONFIG_DIR.get().cloned()
+                let cmd = cmd.to_owned();
+                let cdir = CONFIG_DIR
+                    .get()
+                    .cloned()
                     .unwrap_or_else(|| std::path::PathBuf::from("."));
 
                 // Run the Rhai script on the tokio blocking thread pool with a
@@ -626,7 +695,9 @@ pub(crate) fn spawn_cmd(cmd: &str) {
                             Ok(Ok(out)) if !out.is_empty() => {
                                 // Non-empty return value → run as shell command.
                                 let _ = tokio::process::Command::new("sh")
-                                    .arg("-c").arg(&out).spawn();
+                                    .arg("-c")
+                                    .arg(&out)
+                                    .spawn();
                             }
                             Ok(Err(e)) => tracing::warn!("rhai onclick: {e}"),
                             _ => {}
@@ -657,10 +728,10 @@ use gtk4::glib;
 
 fn parse_align(s: &str) -> gtk4::Align {
     match s.to_lowercase().as_str() {
-        "start" | "left"  | "top"    => gtk4::Align::Start,
-        "end"   | "right" | "bottom" => gtk4::Align::End,
-        "center"                     => gtk4::Align::Center,
-        "fill"  | "baseline"         => gtk4::Align::Fill,
+        "start" | "left" | "top" => gtk4::Align::Start,
+        "end" | "right" | "bottom" => gtk4::Align::End,
+        "center" => gtk4::Align::Center,
+        "fill" | "baseline" => gtk4::Align::Fill,
         _ => gtk4::Align::Fill,
     }
 }
@@ -676,8 +747,10 @@ fn parse_orientation(s: &str) -> gtk4::Orientation {
 
 fn make_box_widget(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::Box> {
     let attrs = &wu.attrs;
-    let orientation = ctx.eval_attr_str(attrs, "orientation")
-        .as_deref().map(parse_orientation)
+    let orientation = ctx
+        .eval_attr_str(attrs, "orientation")
+        .as_deref()
+        .map(parse_orientation)
         .unwrap_or(gtk4::Orientation::Horizontal);
     let spacing = ctx.eval_attr_i64(attrs, "spacing").unwrap_or(0) as i32;
 
@@ -711,17 +784,24 @@ fn build_box(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::Box> {
 fn build_centerbox(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::CenterBox> {
     let b = gtk4::CenterBox::new();
     let attrs = &wu.attrs;
-    let orientation = ctx.eval_attr_str(attrs, "orientation")
-        .as_deref().map(parse_orientation)
+    let orientation = ctx
+        .eval_attr_str(attrs, "orientation")
+        .as_deref()
+        .map(parse_orientation)
         .unwrap_or(gtk4::Orientation::Horizontal);
     b.set_orientation(orientation);
 
-    let mut children = wu.children.iter()
-        .filter_map(|c| build_widget(c, ctx).ok());
+    let mut children = wu.children.iter().filter_map(|c| build_widget(c, ctx).ok());
 
-    if let Some(w) = children.next() { b.set_start_widget(Some(&w)); }
-    if let Some(w) = children.next() { b.set_center_widget(Some(&w)); }
-    if let Some(w) = children.next() { b.set_end_widget(Some(&w)); }
+    if let Some(w) = children.next() {
+        b.set_start_widget(Some(&w));
+    }
+    if let Some(w) = children.next() {
+        b.set_center_widget(Some(&w));
+    }
+    if let Some(w) = children.next() {
+        b.set_end_widget(Some(&w));
+    }
 
     apply_common_props(&b, wu, ctx);
     Ok(b)
@@ -762,7 +842,11 @@ fn build_label(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::Label> {
     {
         let lc = label.clone();
         maybe_bind(attrs, "text", &ctx.scope, text.clone(), move |v| {
-            if use_markup { lc.set_markup(&v); } else { lc.set_text(&v); }
+            if use_markup {
+                lc.set_markup(&v);
+            } else {
+                lc.set_text(&v);
+            }
         });
     }
 
@@ -775,10 +859,10 @@ fn build_label(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::Label> {
     }
     if let Some(justify) = ctx.eval_attr_str(attrs, "justify") {
         label.set_justify(match justify.as_str() {
-            "left"   => gtk4::Justification::Left,
-            "right"  => gtk4::Justification::Right,
+            "left" => gtk4::Justification::Left,
+            "right" => gtk4::Justification::Right,
             "center" => gtk4::Justification::Center,
-            "fill"   => gtk4::Justification::Fill,
+            "fill" => gtk4::Justification::Fill,
             _ => gtk4::Justification::Left,
         });
     }
@@ -791,7 +875,9 @@ fn build_label(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::Label> {
         let style = format!("transform: rotate({}deg);", deg);
         let provider = gtk4::CssProvider::new();
         provider.load_from_string(&format!("label {{ {} }}", style));
-        label.style_context().add_provider(&provider, gtk4::STYLE_PROVIDER_PRIORITY_USER);
+        label
+            .style_context()
+            .add_provider(&provider, gtk4::STYLE_PROVIDER_PRIORITY_USER);
     }
 
     apply_common_props(&label, wu, ctx);
@@ -846,17 +932,19 @@ fn build_image(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::Widget> {
 
         let shared_draw = shared.clone();
         area.set_draw_func(move |_, cr, w, h| {
-            if w <= 0 || h <= 0 { return; }
+            if w <= 0 || h <= 0 {
+                return;
+            }
             let mut state = shared_draw.borrow_mut();
             // Load (or reload) pixbuf at the actual logical dimensions.
-            let needs_load = state.1.as_ref()
+            let needs_load = state
+                .1
+                .as_ref()
                 .map(|pb| pb.width() != w || pb.height() != h)
                 .unwrap_or(true);
             if needs_load {
                 #[allow(deprecated)]
-                let pb = gdk::gdk_pixbuf::Pixbuf::from_file_at_scale(
-                    &state.0, w, h, false,
-                ).ok();
+                let pb = gdk::gdk_pixbuf::Pixbuf::from_file_at_scale(&state.0, w, h, false).ok();
                 state.1 = pb;
             }
             if let Some(pb) = &state.1 {
@@ -867,7 +955,7 @@ fn build_image(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::Widget> {
 
         // Reactive path — invalidate cache and queue redraw.
         let shared_bind = shared.clone();
-        let area_bind   = area.clone();
+        let area_bind = area.clone();
         maybe_bind(attrs, "path", &ctx.scope, path, move |new_path| {
             shared_bind.borrow_mut().0 = new_path;
             shared_bind.borrow_mut().1 = None; // invalidate
@@ -882,12 +970,11 @@ fn build_image(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::Widget> {
     #[allow(deprecated)]
     let image = gtk4::Image::new();
     if let Some(icon) = ctx.eval_attr_str(attrs, "icon-name") {
-        let size = ctx.eval_attr_i64(attrs, "icon-size")
+        let size = ctx
+            .eval_attr_i64(attrs, "icon-size")
             .map(|s| s as i32)
             .unwrap_or(16);
-        image.set_from_gicon(
-            &gtk4::gio::ThemedIcon::new(&icon).upcast::<gtk4::gio::Icon>(),
-        );
+        image.set_from_gicon(&gtk4::gio::ThemedIcon::new(&icon).upcast::<gtk4::gio::Icon>());
         image.set_pixel_size(size);
     }
     apply_common_props(&image, wu, ctx);
@@ -898,11 +985,13 @@ fn build_image(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::Widget> {
 
 fn build_scale(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::Scale> {
     let attrs = &wu.attrs;
-    let orientation = ctx.eval_attr_str(attrs, "orientation")
-        .as_deref().map(parse_orientation)
+    let orientation = ctx
+        .eval_attr_str(attrs, "orientation")
+        .as_deref()
+        .map(parse_orientation)
         .unwrap_or(gtk4::Orientation::Horizontal);
-    let min   = ctx.eval_attr_f64(attrs, "min").unwrap_or(0.0);
-    let max   = ctx.eval_attr_f64(attrs, "max").unwrap_or(100.0);
+    let min = ctx.eval_attr_f64(attrs, "min").unwrap_or(0.0);
+    let max = ctx.eval_attr_f64(attrs, "max").unwrap_or(100.0);
     let value = ctx.eval_attr_f64(attrs, "value").unwrap_or(0.0);
 
     let adj = gtk4::Adjustment::new(value, min, max, 1.0, 10.0, 0.0);
@@ -925,7 +1014,9 @@ fn build_scale(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::Scale> {
     {
         let sc = scale.clone();
         maybe_bind(attrs, "value", &ctx.scope, value.to_string(), move |v| {
-            if let Ok(f) = v.parse::<f64>() { sc.set_value(f); }
+            if let Ok(f) = v.parse::<f64>() {
+                sc.set_value(f);
+            }
         });
     }
 
@@ -945,27 +1036,32 @@ fn ensure_adw_init() {
 
 #[cfg(feature = "animations")]
 fn parse_adw_easing(s: Option<&str>) -> libadwaita::Easing {
-    match s.unwrap_or("ease-in-out-cubic").to_lowercase().replace('_', "-").as_str() {
-        "linear"               => libadwaita::Easing::Linear,
-        "ease-in" | "ease-in-quad"       => libadwaita::Easing::EaseInQuad,
-        "ease-out" | "ease-out-quad"     => libadwaita::Easing::EaseOutQuad,
+    match s
+        .unwrap_or("ease-in-out-cubic")
+        .to_lowercase()
+        .replace('_', "-")
+        .as_str()
+    {
+        "linear" => libadwaita::Easing::Linear,
+        "ease-in" | "ease-in-quad" => libadwaita::Easing::EaseInQuad,
+        "ease-out" | "ease-out-quad" => libadwaita::Easing::EaseOutQuad,
         "ease-in-out" | "ease-in-out-quad" => libadwaita::Easing::EaseInOutQuad,
-        "ease-in-cubic"        => libadwaita::Easing::EaseInCubic,
-        "ease-out-cubic"       => libadwaita::Easing::EaseOutCubic,
-        "ease-in-out-cubic"    => libadwaita::Easing::EaseInOutCubic,
-        "ease-in-sine"         => libadwaita::Easing::EaseInSine,
-        "ease-out-sine"        => libadwaita::Easing::EaseOutSine,
-        "ease-in-out-sine"     => libadwaita::Easing::EaseInOutSine,
-        "ease-in-expo"         => libadwaita::Easing::EaseInExpo,
-        "ease-out-expo"        => libadwaita::Easing::EaseOutExpo,
-        "ease-in-out-expo"     => libadwaita::Easing::EaseInOutExpo,
-        "ease-in-back"         => libadwaita::Easing::EaseInBack,
-        "ease-out-back"        => libadwaita::Easing::EaseOutBack,
-        "ease-in-out-back"     => libadwaita::Easing::EaseInOutBack,
-        "ease-in-bounce"       => libadwaita::Easing::EaseInBounce,
-        "ease-out-bounce"      => libadwaita::Easing::EaseOutBounce,
-        "ease-in-out-bounce"   => libadwaita::Easing::EaseInOutBounce,
-        _                      => libadwaita::Easing::EaseInOutCubic,
+        "ease-in-cubic" => libadwaita::Easing::EaseInCubic,
+        "ease-out-cubic" => libadwaita::Easing::EaseOutCubic,
+        "ease-in-out-cubic" => libadwaita::Easing::EaseInOutCubic,
+        "ease-in-sine" => libadwaita::Easing::EaseInSine,
+        "ease-out-sine" => libadwaita::Easing::EaseOutSine,
+        "ease-in-out-sine" => libadwaita::Easing::EaseInOutSine,
+        "ease-in-expo" => libadwaita::Easing::EaseInExpo,
+        "ease-out-expo" => libadwaita::Easing::EaseOutExpo,
+        "ease-in-out-expo" => libadwaita::Easing::EaseInOutExpo,
+        "ease-in-back" => libadwaita::Easing::EaseInBack,
+        "ease-out-back" => libadwaita::Easing::EaseOutBack,
+        "ease-in-out-back" => libadwaita::Easing::EaseInOutBack,
+        "ease-in-bounce" => libadwaita::Easing::EaseInBounce,
+        "ease-out-bounce" => libadwaita::Easing::EaseOutBounce,
+        "ease-in-out-bounce" => libadwaita::Easing::EaseInOutBounce,
+        _ => libadwaita::Easing::EaseInOutCubic,
     }
 }
 
@@ -981,7 +1077,7 @@ fn build_progress(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::ProgressBa
     #[cfg(feature = "animations")]
     {
         let duration = ctx.eval_attr_i64(attrs, "animate-duration").unwrap_or(0) as u32;
-        let easing   = parse_adw_easing(ctx.eval_attr_str(attrs, "animate-easing").as_deref());
+        let easing = parse_adw_easing(ctx.eval_attr_str(attrs, "animate-easing").as_deref());
         if duration > 0 {
             ensure_adw_init();
             let anim_holder: std::rc::Rc<RefCell<Option<libadwaita::TimedAnimation>>> =
@@ -991,7 +1087,9 @@ fn build_progress(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::ProgressBa
             maybe_bind(attrs, "value", &ctx.scope, value.to_string(), move |v| {
                 if let Ok(f) = v.parse::<f64>() {
                     let to = (f / 100.0).clamp(0.0, 1.0);
-                    if let Some(p) = ah.borrow().as_ref() { p.pause(); }
+                    if let Some(p) = ah.borrow().as_ref() {
+                        p.pause();
+                    }
                     let from = bc.fraction();
                     let bc2 = bc.clone();
                     let target = libadwaita::CallbackAnimationTarget::new(move |val| {
@@ -1007,7 +1105,9 @@ fn build_progress(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::ProgressBa
         } else {
             let bc = bar.clone();
             maybe_bind(attrs, "value", &ctx.scope, value.to_string(), move |v| {
-                if let Ok(f) = v.parse::<f64>() { bc.set_fraction((f / 100.0).clamp(0.0, 1.0)); }
+                if let Ok(f) = v.parse::<f64>() {
+                    bc.set_fraction((f / 100.0).clamp(0.0, 1.0));
+                }
             });
         }
     }
@@ -1015,12 +1115,16 @@ fn build_progress(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::ProgressBa
     {
         let bc = bar.clone();
         maybe_bind(attrs, "value", &ctx.scope, value.to_string(), move |v| {
-            if let Ok(f) = v.parse::<f64>() { bc.set_fraction((f / 100.0).clamp(0.0, 1.0)); }
+            if let Ok(f) = v.parse::<f64>() {
+                bc.set_fraction((f / 100.0).clamp(0.0, 1.0));
+            }
         });
     }
 
-    let orientation = ctx.eval_attr_str(attrs, "orientation")
-        .as_deref().map(parse_orientation)
+    let orientation = ctx
+        .eval_attr_str(attrs, "orientation")
+        .as_deref()
+        .map(parse_orientation)
         .unwrap_or(gtk4::Orientation::Horizontal);
     bar.set_orientation(orientation);
 
@@ -1034,16 +1138,15 @@ fn build_progress(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::ProgressBa
 
 // ── Circular Progress (custom widget from Ewwii) ──────────────────────────────
 
-static RING_OVERLAY_CTR: std::sync::atomic::AtomicUsize =
-    std::sync::atomic::AtomicUsize::new(0);
+static RING_OVERLAY_CTR: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 fn build_circular_progress(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::Widget> {
     use std::{cell::Cell, f64::consts::PI, rc::Rc};
     let attrs = &wu.attrs;
 
-    let value       = ctx.eval_attr_f64(attrs, "value").unwrap_or(0.0);
-    let thickness   = ctx.eval_attr_f64(attrs, "thickness").unwrap_or(4.0);
-    let clockwise   = ctx.eval_attr_bool(attrs, "clockwise").unwrap_or(true);
+    let value = ctx.eval_attr_f64(attrs, "value").unwrap_or(0.0);
+    let thickness = ctx.eval_attr_f64(attrs, "thickness").unwrap_or(4.0);
+    let clockwise = ctx.eval_attr_bool(attrs, "clockwise").unwrap_or(true);
     // `:start-at` (eww %) and `:start-angle` (degrees) both supported.
     // eww's start-at: 0=top, 25=right, 50=bottom, 75=left (percentage of circle).
     let start_angle = if let Some(pct) = ctx.eval_attr_f64(attrs, "start-at") {
@@ -1054,7 +1157,8 @@ fn build_circular_progress(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::W
     let explicit_fg = ctx.eval_attr_str(attrs, "foreground");
     let explicit_bg = ctx.eval_attr_str(attrs, "background");
 
-    let size = ctx.eval_attr_i64(attrs, "width")
+    let size = ctx
+        .eval_attr_i64(attrs, "width")
         .or_else(|| ctx.eval_attr_i64(attrs, "height"))
         .unwrap_or(24) as i32;
 
@@ -1089,10 +1193,10 @@ fn build_circular_progress(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::W
         let h = h as f64;
         let cx = w / 2.0;
         let cy = h / 2.0;
-        let r  = (w.min(h) / 2.0) - thickness / 2.0;
-        let start    = start_angle * PI / 180.0;
+        let r = (w.min(h) / 2.0) - thickness / 2.0;
+        let start = start_angle * PI / 180.0;
         let fraction = (val / 100.0).clamp(0.0, 1.0);
-        let sweep    = 2.0 * PI * fraction;
+        let sweep = 2.0 * PI * fraction;
 
         // Background arc (full circle) — use explicit attr or transparent
         let bg_rgba = if let Some(ref c) = explicit_bg {
@@ -1112,7 +1216,12 @@ fn build_circular_progress(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::W
             parse_rgba_css(c)
         } else {
             let c = widget.color();
-            (c.red() as f64, c.green() as f64, c.blue() as f64, c.alpha() as f64)
+            (
+                c.red() as f64,
+                c.green() as f64,
+                c.blue() as f64,
+                c.alpha() as f64,
+            )
         };
         // Only draw if there's something to draw — cairo arc with equal angles draws a full circle.
         if sweep > 1e-6 {
@@ -1175,7 +1284,12 @@ fn parse_rgba_css(s: &str) -> (f64, f64, f64, f64) {
     let s = s.trim();
     // Try GTK's built-in parser first — handles #hex, rgb(), rgba(), named colors.
     if let Ok(rgba) = s.parse::<gtk4::gdk::RGBA>() {
-        return (rgba.red() as f64, rgba.green() as f64, rgba.blue() as f64, rgba.alpha() as f64);
+        return (
+            rgba.red() as f64,
+            rgba.green() as f64,
+            rgba.blue() as f64,
+            rgba.alpha() as f64,
+        );
     }
     // Manual hex fallback
     if s.starts_with('#') {
@@ -1211,8 +1325,16 @@ fn build_scroll(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::ScrolledWind
     let hscroll = ctx.eval_attr_bool(attrs, "hscroll").unwrap_or(true);
     let vscroll = ctx.eval_attr_bool(attrs, "vscroll").unwrap_or(true);
     sw.set_policy(
-        if hscroll { gtk4::PolicyType::Automatic } else { gtk4::PolicyType::Never },
-        if vscroll { gtk4::PolicyType::Automatic } else { gtk4::PolicyType::Never },
+        if hscroll {
+            gtk4::PolicyType::Automatic
+        } else {
+            gtk4::PolicyType::Never
+        },
+        if vscroll {
+            gtk4::PolicyType::Automatic
+        } else {
+            gtk4::PolicyType::Never
+        },
     );
 
     if let Some(child) = wu.children.first()
@@ -1250,7 +1372,9 @@ fn build_revealer(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::Revealer> 
     let revealer = gtk4::Revealer::new();
     let attrs = &wu.attrs;
 
-    let transition = ctx.eval_attr_str(attrs, "transition").as_deref()
+    let transition = ctx
+        .eval_attr_str(attrs, "transition")
+        .as_deref()
         .map(parse_revealer_transition)
         .unwrap_or(gtk4::RevealerTransitionType::SlideDown);
     revealer.set_transition_type(transition);
@@ -1281,11 +1405,11 @@ fn build_revealer(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::Revealer> 
 
 fn parse_revealer_transition(s: &str) -> gtk4::RevealerTransitionType {
     match s.to_lowercase().as_str() {
-        "slideright" | "slide_right"  => gtk4::RevealerTransitionType::SlideRight,
-        "slideleft"  | "slide_left"   => gtk4::RevealerTransitionType::SlideLeft,
-        "slideup"    | "slide_up"     => gtk4::RevealerTransitionType::SlideUp,
-        "crossfade"  | "cross_fade"   => gtk4::RevealerTransitionType::Crossfade,
-        "none"                        => gtk4::RevealerTransitionType::None,
+        "slideright" | "slide_right" => gtk4::RevealerTransitionType::SlideRight,
+        "slideleft" | "slide_left" => gtk4::RevealerTransitionType::SlideLeft,
+        "slideup" | "slide_up" => gtk4::RevealerTransitionType::SlideUp,
+        "crossfade" | "cross_fade" => gtk4::RevealerTransitionType::Crossfade,
+        "none" => gtk4::RevealerTransitionType::None,
         _ => gtk4::RevealerTransitionType::SlideDown,
     }
 }
@@ -1299,10 +1423,10 @@ fn build_stack(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::Stack> {
     if let Some(transition) = ctx.eval_attr_str(attrs, "transition") {
         let t = match transition.as_str() {
             "slide-right" | "slideright" => gtk4::StackTransitionType::SlideRight,
-            "slide-left"  | "slideleft"  => gtk4::StackTransitionType::SlideLeft,
-            "slide-up"    | "slideup"    => gtk4::StackTransitionType::SlideUp,
-            "slide-down"  | "slidedown"  => gtk4::StackTransitionType::SlideDown,
-            "crossfade"                  => gtk4::StackTransitionType::Crossfade,
+            "slide-left" | "slideleft" => gtk4::StackTransitionType::SlideLeft,
+            "slide-up" | "slideup" => gtk4::StackTransitionType::SlideUp,
+            "slide-down" | "slidedown" => gtk4::StackTransitionType::SlideDown,
+            "crossfade" => gtk4::StackTransitionType::Crossfade,
             _ => gtk4::StackTransitionType::None,
         };
         stack.set_transition_type(t);
@@ -1311,7 +1435,9 @@ fn build_stack(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::Stack> {
     if let Some(shown) = ctx.eval_attr_str(attrs, "shown") {
         for child in &wu.children {
             if let WidgetUse::Basic(b) = child
-                && let Some(name) = ctx.eval_attr_str(&b.attrs, "name").or_else(|| Some(b.name.clone()))
+                && let Some(name) = ctx
+                    .eval_attr_str(&b.attrs, "name")
+                    .or_else(|| Some(b.name.clone()))
                 && let Ok(w) = build_widget(child, ctx)
             {
                 stack.add_named(&w, Some(&name));
@@ -1353,8 +1479,12 @@ fn build_expander(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::Expander> 
 fn build_checkbox(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::CheckButton> {
     let attrs = &wu.attrs;
     let cb = gtk4::CheckButton::new();
-    if let Some(v) = ctx.eval_attr_bool(attrs, "checked") { cb.set_active(v); }
-    if let Some(label) = ctx.eval_attr_str(attrs, "label") { cb.set_label(Some(&label)); }
+    if let Some(v) = ctx.eval_attr_bool(attrs, "checked") {
+        cb.set_active(v);
+    }
+    if let Some(label) = ctx.eval_attr_str(attrs, "label") {
+        cb.set_label(Some(&label));
+    }
 
     if let Some(cmd) = ctx.eval_attr_str(attrs, "ontoggle") {
         cb.connect_toggled(move |b| {
@@ -1402,12 +1532,16 @@ fn build_input(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::Entry> {
     let initial_focus = ctx.eval_attr_str(attrs, "focus").unwrap_or_default();
     if initial_focus == "true" {
         let e = entry.clone();
-        entry.connect_map(move |_| { e.grab_focus(); });
+        entry.connect_map(move |_| {
+            e.grab_focus();
+        });
     }
     {
         let e = entry.clone();
         maybe_bind(attrs, "focus", &ctx.scope, initial_focus, move |v| {
-            if v == "true" { e.grab_focus(); }
+            if v == "true" {
+                e.grab_focus();
+            }
         });
     }
 
@@ -1422,9 +1556,15 @@ fn build_calendar(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::Calendar> 
     if let Some(cmd) = ctx.eval_attr_str(&wu.attrs, "onclick") {
         cal.connect_day_selected(move |c| {
             let date = c.date();
-            spawn_cmd(&cmd
-                .replace("{}", &format!("{}-{:02}-{:02}",
-                    date.year(), date.month() as u32, date.day_of_month())));
+            spawn_cmd(&cmd.replace(
+                "{}",
+                &format!(
+                    "{}-{:02}-{:02}",
+                    date.year(),
+                    date.month() as u32,
+                    date.day_of_month()
+                ),
+            ));
         });
     }
     apply_common_props(&cal, wu, ctx);
@@ -1468,9 +1608,16 @@ fn build_color_button(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::ColorB
     if let Some(cmd) = ctx.eval_attr_str(&wu.attrs, "onchange") {
         cb.connect_color_set(move |b| {
             let c = b.rgba();
-            spawn_cmd(&cmd.replace("{}", &format!("rgba({},{},{},{})",
-                (c.red()*255.0) as u8, (c.green()*255.0) as u8,
-                (c.blue()*255.0) as u8, c.alpha())));
+            spawn_cmd(&cmd.replace(
+                "{}",
+                &format!(
+                    "rgba({},{},{},{})",
+                    (c.red() * 255.0) as u8,
+                    (c.green() * 255.0) as u8,
+                    (c.blue() * 255.0) as u8,
+                    c.alpha()
+                ),
+            ));
         });
     }
     apply_common_props(&cb, wu, ctx);
@@ -1542,12 +1689,14 @@ fn build_systray(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::Box> {
 #[cfg(feature = "systray")]
 enum SystrayEvent {
     Add {
-        id:      String,
-        icon:    meh_notifier_host::IconResult,
+        id: String,
+        icon: meh_notifier_host::IconResult,
         tooltip: Option<String>,
-        item:    meh_notifier_host::Item,
+        item: meh_notifier_host::Item,
     },
-    Remove { id: String },
+    Remove {
+        id: String,
+    },
 }
 
 #[cfg(feature = "systray")]
@@ -1558,7 +1707,12 @@ fn systray_handle_event(
 ) {
     use std::sync::Arc;
     match ev {
-        SystrayEvent::Add { id, icon, tooltip, item } => {
+        SystrayEvent::Add {
+            id,
+            icon,
+            tooltip,
+            item,
+        } => {
             let img = systray_icon_to_image(icon);
             img.set_pixel_size(24);
 
@@ -1572,7 +1726,9 @@ fn systray_handle_event(
             btn.connect_clicked(move |_| {
                 let item = item.clone();
                 if let Some(handle) = TOKIO_HANDLE.get() {
-                    handle.spawn(async move { let _ = item.sni.activate(0, 0).await; });
+                    handle.spawn(async move {
+                        let _ = item.sni.activate(0, 0).await;
+                    });
                 }
             });
 
@@ -1591,7 +1747,10 @@ fn systray_handle_event(
 fn systray_icon_to_image(icon: meh_notifier_host::IconResult) -> gtk4::Image {
     use meh_notifier_host::IconResult;
     match icon {
-        IconResult::Named { name, theme_path: None } => {
+        IconResult::Named {
+            name,
+            theme_path: None,
+        } => {
             if std::path::Path::new(&name).is_absolute() {
                 let img = gtk4::Image::new();
                 if let Ok(texture) = gtk4::gdk::Texture::from_filename(&name) {
@@ -1602,20 +1761,31 @@ fn systray_icon_to_image(icon: meh_notifier_host::IconResult) -> gtk4::Image {
                 gtk4::Image::from_icon_name(&name)
             }
         }
-        IconResult::Named { name, theme_path: Some(tp) } => {
+        IconResult::Named {
+            name,
+            theme_path: Some(tp),
+        } => {
             let theme = gtk4::IconTheme::new();
             theme.add_search_path(&tp);
             let paintable = theme.lookup_icon(
-                &name, &[], 24, 1,
+                &name,
+                &[],
+                24,
+                1,
                 gtk4::TextDirection::None,
                 gtk4::IconLookupFlags::empty(),
             );
             gtk4::Image::from_paintable(Some(&paintable))
         }
-        IconResult::Pixmap { width, height, rgba } => {
+        IconResult::Pixmap {
+            width,
+            height,
+            rgba,
+        } => {
             let bytes = gtk4::glib::Bytes::from_owned(rgba);
             let texture = gtk4::gdk::MemoryTexture::new(
-                width, height,
+                width,
+                height,
                 gtk4::gdk::MemoryFormat::R8g8b8a8,
                 &bytes,
                 (width * 4) as usize,
@@ -1627,10 +1797,8 @@ fn systray_icon_to_image(icon: meh_notifier_host::IconResult) -> gtk4::Image {
 }
 
 #[cfg(feature = "systray")]
-async fn run_notifier_host_task(
-    tx: std::sync::mpsc::Sender<SystrayEvent>,
-) -> anyhow::Result<()> {
-    use meh_notifier_host::{register_as_host, run_host, Host, Item, Watcher};
+async fn run_notifier_host_task(tx: std::sync::mpsc::Sender<SystrayEvent>) -> anyhow::Result<()> {
+    use meh_notifier_host::{Host, Item, Watcher, register_as_host, run_host};
 
     struct MehHost {
         tx: std::sync::mpsc::Sender<SystrayEvent>,
@@ -1641,9 +1809,14 @@ async fn run_notifier_host_task(
             let id = id.to_owned();
             let tx = self.tx.clone();
             tokio::spawn(async move {
-                let icon    = item.load_icon_result(24).await;
+                let icon = item.load_icon_result(24).await;
                 let tooltip = item.sni.title().await.ok().filter(|s| !s.is_empty());
-                let _ = tx.send(SystrayEvent::Add { id, icon, tooltip, item });
+                let _ = tx.send(SystrayEvent::Add {
+                    id,
+                    icon,
+                    tooltip,
+                    item,
+                });
             });
         }
 
@@ -1671,14 +1844,14 @@ const VERT_SRC: &str = concat!(
 
 #[cfg(feature = "shader")]
 struct ShaderGlState {
-    gl:             glow::Context,
-    program:        glow::NativeProgram,
-    vao:            glow::NativeVertexArray,
-    loc_time:       Option<glow::NativeUniformLocation>,
+    gl: glow::Context,
+    program: glow::NativeProgram,
+    vao: glow::NativeVertexArray,
+    loc_time: Option<glow::NativeUniformLocation>,
     loc_resolution: Option<glow::NativeUniformLocation>,
-    start:          std::time::Instant,
-    w:              f32,
-    h:              f32,
+    start: std::time::Instant,
+    w: f32,
+    h: f32,
 }
 
 /// Load GL function pointers via EGL (the GTK4 GL backend on Wayland).
@@ -1696,7 +1869,8 @@ fn egl_loader(name: &std::ffi::CStr) -> *const std::ffi::c_void {
 fn compile_program(gl: &glow::Context, vert: &str, frag: &str) -> Result<glow::NativeProgram> {
     use glow::HasContext;
     unsafe {
-        let vs = gl.create_shader(glow::VERTEX_SHADER)
+        let vs = gl
+            .create_shader(glow::VERTEX_SHADER)
             .map_err(|e| anyhow::anyhow!("create vertex shader: {}", e))?;
         gl.shader_source(vs, vert);
         gl.compile_shader(vs);
@@ -1706,7 +1880,8 @@ fn compile_program(gl: &glow::Context, vert: &str, frag: &str) -> Result<glow::N
             anyhow::bail!("vertex shader: {}", log);
         }
 
-        let fs = gl.create_shader(glow::FRAGMENT_SHADER)
+        let fs = gl
+            .create_shader(glow::FRAGMENT_SHADER)
             .map_err(|e| anyhow::anyhow!("create fragment shader: {}", e))?;
         gl.shader_source(fs, frag);
         gl.compile_shader(fs);
@@ -1717,7 +1892,8 @@ fn compile_program(gl: &glow::Context, vert: &str, frag: &str) -> Result<glow::N
             anyhow::bail!("fragment shader: {}", log);
         }
 
-        let prog = gl.create_program()
+        let prog = gl
+            .create_program()
             .map_err(|e| anyhow::anyhow!("create program: {}", e))?;
         gl.attach_shader(prog, vs);
         gl.attach_shader(prog, fs);
@@ -1746,11 +1922,12 @@ fn compile_program(gl: &glow::Context, vert: &str, frag: &str) -> Result<glow::N
 /// Only available in the `full` build profile (`--features shader`).
 #[cfg(feature = "shader")]
 fn build_shader(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::GLArea> {
-    use std::{cell::RefCell, rc::Rc};
-    use gtk4::prelude::*;
     use glow::HasContext;
+    use gtk4::prelude::*;
+    use std::{cell::RefCell, rc::Rc};
 
-    let frag_path = ctx.eval_attr_str(&wu.attrs, "frag")
+    let frag_path = ctx
+        .eval_attr_str(&wu.attrs, "frag")
         .ok_or_else(|| anyhow::anyhow!("`shader` widget requires `:frag` attribute"))?;
 
     // Solid magenta fallback — visually obvious indicator of a missing shader file.
@@ -1766,8 +1943,12 @@ fn build_shader(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::GLArea> {
     area.set_has_stencil_buffer(false);
     area.set_auto_render(true);
 
-    if let Some(w) = ctx.eval_attr_i64(&wu.attrs, "width")  { area.set_width_request(w as i32); }
-    if let Some(h) = ctx.eval_attr_i64(&wu.attrs, "height") { area.set_height_request(h as i32); }
+    if let Some(w) = ctx.eval_attr_i64(&wu.attrs, "width") {
+        area.set_width_request(w as i32);
+    }
+    if let Some(h) = ctx.eval_attr_i64(&wu.attrs, "height") {
+        area.set_height_request(h as i32);
+    }
     apply_common_props(&area.clone().upcast::<gtk4::Widget>(), wu, ctx);
 
     let state: Rc<RefCell<Option<ShaderGlState>>> = Rc::new(RefCell::new(None));
@@ -1777,17 +1958,24 @@ fn build_shader(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::GLArea> {
         let state = state.clone();
         area.connect_realize(move |area| {
             area.make_current();
-            if area.error().is_some() { return; }
+            if area.error().is_some() {
+                return;
+            }
             let gl = unsafe { glow::Context::from_loader_function_cstr(egl_loader) };
             match compile_program(&gl, VERT_SRC, &frag_src) {
                 Ok(program) => {
-                    let vao            = unsafe { gl.create_vertex_array().expect("create vao") };
-                    let loc_time       = unsafe { gl.get_uniform_location(program, "iTime") };
+                    let vao = unsafe { gl.create_vertex_array().expect("create vao") };
+                    let loc_time = unsafe { gl.get_uniform_location(program, "iTime") };
                     let loc_resolution = unsafe { gl.get_uniform_location(program, "iResolution") };
                     *state.borrow_mut() = Some(ShaderGlState {
-                        gl, program, vao, loc_time, loc_resolution,
+                        gl,
+                        program,
+                        vao,
+                        loc_time,
+                        loc_resolution,
                         start: std::time::Instant::now(),
-                        w: 1.0, h: 1.0,
+                        w: 1.0,
+                        h: 1.0,
                     });
                 }
                 Err(e) => tracing::warn!("shader compile failed for `{}`: {}", frag_path, e),

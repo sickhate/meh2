@@ -56,11 +56,15 @@ impl<I: Iterator<Item = Ast>> AstIterator<I> {
     }
 
     pub fn new(span: Span, iter: I) -> Self {
-        AstIterator { remaining_span: span, iter: itertools::put_back(iter) }
+        AstIterator {
+            remaining_span: span,
+            iter: itertools::put_back(iter),
+        }
     }
 
     pub fn expect_any(&mut self) -> Result<Ast, AstError> {
-        self.next().ok_or_else(|| AstError::TooFewElements(self.remaining_span.point_span()))
+        self.next()
+            .ok_or_else(|| AstError::TooFewElements(self.remaining_span.point_span()))
     }
 
     pub fn expect_simplexpr(&mut self) -> Result<(Span, SimplExpr), AstError> {

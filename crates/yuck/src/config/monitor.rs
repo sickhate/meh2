@@ -20,7 +20,9 @@ impl MonitorIdentifier {
     pub fn from_dynval(val: &DynVal) -> Result<Self, ConversionError> {
         match val.as_json_array() {
             Ok(arr) => Ok(MonitorIdentifier::List(
-                arr.iter().map(|x| MonitorIdentifier::from_dynval(&x.into())).collect::<Result<_, _>>()?,
+                arr.iter()
+                    .map(|x| MonitorIdentifier::from_dynval(&x.into()))
+                    .collect::<Result<_, _>>()?,
             )),
             Err(_) => match val.as_i32() {
                 Ok(x) => Ok(MonitorIdentifier::Numeric(x)),
@@ -48,7 +50,14 @@ impl From<&MonitorIdentifier> for DynVal {
 impl fmt::Display for MonitorIdentifier {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::List(l) => write!(f, "[{}]", l.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(" ")),
+            Self::List(l) => write!(
+                f,
+                "[{}]",
+                l.iter()
+                    .map(|x| x.to_string())
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            ),
             Self::Numeric(n) => write!(f, "{}", n),
             Self::Name(n) => write!(f, "{}", n),
             Self::Primary => write!(f, "<primary>"),

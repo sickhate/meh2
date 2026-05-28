@@ -1,6 +1,6 @@
 // MIT — ported from elkowar/eww crates/notifier_host/src/watcher.rs
 use crate::names;
-use zbus::{dbus_interface, export::ordered_stream::OrderedStreamExt, Interface};
+use zbus::{Interface, dbus_interface, export::ordered_stream::OrderedStreamExt};
 
 /// An instance of `org.kde.StatusNotifierWatcher`. Tracks tray items and hosts;
 /// does not render anything (see [`Host`][`crate::Host`] for that).
@@ -34,7 +34,8 @@ impl Watcher {
         };
 
         if added_first {
-            self.is_status_notifier_host_registered_changed(&ctxt).await?;
+            self.is_status_notifier_host_registered_changed(&ctxt)
+                .await?;
         }
         Watcher::status_notifier_host_registered(&ctxt).await?;
 
@@ -55,7 +56,8 @@ impl Watcher {
                 };
 
                 if removed_last
-                    && let Err(e) = Watcher::is_status_notifier_host_registered_refresh(&ctxt).await {
+                    && let Err(e) = Watcher::is_status_notifier_host_registered_refresh(&ctxt).await
+                {
                     tracing::error!("failed to signal Watcher: {}", e);
                 }
                 if let Err(e) = Watcher::status_notifier_host_unregistered(&ctxt).await {
@@ -119,7 +121,9 @@ impl Watcher {
                 if let Err(e) = Watcher::registered_status_notifier_items_refresh(&ctxt).await {
                     tracing::error!("failed to signal Watcher: {}", e);
                 }
-                if let Err(e) = Watcher::status_notifier_item_unregistered(&ctxt, item.as_ref()).await {
+                if let Err(e) =
+                    Watcher::status_notifier_item_unregistered(&ctxt, item.as_ref()).await
+                {
                     tracing::error!("failed to signal Watcher: {}", e);
                 }
             }
@@ -129,10 +133,16 @@ impl Watcher {
     }
 
     #[dbus_interface(signal)]
-    async fn status_notifier_item_registered(ctxt: &zbus::SignalContext<'_>, service: &str) -> zbus::Result<()>;
+    async fn status_notifier_item_registered(
+        ctxt: &zbus::SignalContext<'_>,
+        service: &str,
+    ) -> zbus::Result<()>;
 
     #[dbus_interface(signal)]
-    async fn status_notifier_item_unregistered(ctxt: &zbus::SignalContext<'_>, service: &str) -> zbus::Result<()>;
+    async fn status_notifier_item_unregistered(
+        ctxt: &zbus::SignalContext<'_>,
+        service: &str,
+    ) -> zbus::Result<()>;
 
     #[dbus_interface(property)]
     async fn registered_status_notifier_items(&self) -> Vec<String> {
@@ -159,14 +169,19 @@ impl Watcher {
         }
 
         let flags: [zbus::fdo::RequestNameFlags; 0] = [];
-        match con.request_name_with_flags(names::WATCHER_BUS, flags.into_iter().collect()).await {
+        match con
+            .request_name_with_flags(names::WATCHER_BUS, flags.into_iter().collect())
+            .await
+        {
             Ok(zbus::fdo::RequestNameReply::PrimaryOwner) => Ok(()),
             Ok(_) | Err(zbus::Error::NameTaken) => Ok(()),
             Err(e) => Err(e),
         }
     }
 
-    async fn is_status_notifier_host_registered_refresh(ctxt: &zbus::SignalContext<'_>) -> zbus::Result<()> {
+    async fn is_status_notifier_host_registered_refresh(
+        ctxt: &zbus::SignalContext<'_>,
+    ) -> zbus::Result<()> {
         zbus::fdo::Properties::properties_changed(
             ctxt,
             Self::name(),
@@ -176,7 +191,9 @@ impl Watcher {
         .await
     }
 
-    async fn registered_status_notifier_items_refresh(ctxt: &zbus::SignalContext<'_>) -> zbus::Result<()> {
+    async fn registered_status_notifier_items_refresh(
+        ctxt: &zbus::SignalContext<'_>,
+    ) -> zbus::Result<()> {
         zbus::fdo::Properties::properties_changed(
             ctxt,
             Self::name(),
@@ -223,9 +240,14 @@ async fn parse_service<'a>(
     }
 }
 
-async fn wait_for_service_exit(con: &zbus::Connection, service: zbus::names::BusName<'_>) -> zbus::fdo::Result<()> {
+async fn wait_for_service_exit(
+    con: &zbus::Connection,
+    service: zbus::names::BusName<'_>,
+) -> zbus::fdo::Result<()> {
     let dbus = zbus::fdo::DBusProxy::new(con).await?;
-    let mut owner_changes = dbus.receive_name_owner_changed_with_args(&[(0, &service)]).await?;
+    let mut owner_changes = dbus
+        .receive_name_owner_changed_with_args(&[(0, &service)])
+        .await?;
 
     if !dbus.name_has_owner(service.as_ref()).await? {
         return Ok(());

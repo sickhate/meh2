@@ -124,7 +124,13 @@ pub struct Lexer<'s> {
 
 impl<'s> Lexer<'s> {
     pub fn new(file_id: usize, span_offset: usize, source: &'s str) -> Self {
-        Lexer { source, offset: span_offset, file_id, failed: false, pos: 0 }
+        Lexer {
+            source,
+            offset: span_offset,
+            file_id,
+            failed: false,
+            pos: 0,
+        }
     }
 
     fn remaining(&self) -> &'s str {
@@ -139,7 +145,9 @@ impl<'s> Lexer<'s> {
             let remaining = self.remaining();
 
             if remaining.starts_with(&['"', '\'', '`'][..]) {
-                return self.string_lit().map(|x| x.map(|(lo, segs, hi)| (lo, Token::StringLit(segs), hi)));
+                return self
+                    .string_lit()
+                    .map(|x| x.map(|(lo, segs, hi)| (lo, Token::StringLit(segs), hi)));
             } else {
                 let match_set = LEXER_REGEX_SET.matches(remaining);
                 let matched_token = match_set
@@ -154,7 +162,11 @@ impl<'s> Lexer<'s> {
                     Some(x) => x,
                     None => {
                         self.failed = true;
-                        return Some(Err(LexicalError(Span(self.pos + self.offset, self.pos + self.offset, self.file_id))));
+                        return Some(Err(LexicalError(Span(
+                            self.pos + self.offset,
+                            self.pos + self.offset,
+                            self.file_id,
+                        ))));
                     }
                 };
 
@@ -221,15 +233,27 @@ impl<'s> Lexer<'s> {
             if in_string_lit {
                 let segment_start = self.pos - quote.len();
 
-                let segment_ender = self.advance_until_unescaped_one_of(&[STR_INTERPOLATION_START, &quote])?;
-                let lit_content = &self.source[segment_start + quote.len()..self.pos - segment_ender.len()];
-                let lit_content = ESCAPE_REPLACE_REGEX.replace_all(lit_content, "$1").to_string();
-                elements.push((segment_start + self.offset, StrLitSegment::Literal(lit_content), self.pos + self.offset));
+                let segment_ender =
+                    self.advance_until_unescaped_one_of(&[STR_INTERPOLATION_START, &quote])?;
+                let lit_content =
+                    &self.source[segment_start + quote.len()..self.pos - segment_ender.len()];
+                let lit_content = ESCAPE_REPLACE_REGEX
+                    .replace_all(lit_content, "$1")
+                    .to_string();
+                elements.push((
+                    segment_start + self.offset,
+                    StrLitSegment::Literal(lit_content),
+                    self.pos + self.offset,
+                ));
 
                 if segment_ender == STR_INTERPOLATION_START {
                     in_string_lit = false;
                 } else if segment_ender == quote {
-                    return Some(Ok((str_lit_start + self.offset, elements, self.pos + self.offset)));
+                    return Some(Ok((
+                        str_lit_start + self.offset,
+                        elements,
+                        self.pos + self.offset,
+                    )));
                 }
             } else {
                 let segment_start = self.pos;
@@ -258,7 +282,11 @@ impl<'s> Lexer<'s> {
                     }
                 }
 
-                elements.push((segment_start + self.offset, StrLitSegment::Interp(toks), self.pos + self.offset - 1));
+                elements.push((
+                    segment_start + self.offset,
+                    StrLitSegment::Interp(toks),
+                    self.pos + self.offset - 1,
+                ));
                 in_string_lit = true;
             }
         }

@@ -29,21 +29,30 @@ enum ResultItem {
 pub fn build_launcher(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::Widget> {
     let attrs = &wu.attrs;
 
-    let placeholder = ctx.eval_attr_str(attrs, "placeholder")
-        .unwrap_or_default();
-    let max_results = ctx.eval_attr_str(attrs, "max-results")
+    let placeholder = ctx.eval_attr_str(attrs, "placeholder").unwrap_or_default();
+    let max_results = ctx
+        .eval_attr_str(attrs, "max-results")
         .and_then(|s| s.parse::<usize>().ok())
         .unwrap_or(8);
-    let window_name = ctx.eval_attr_str(attrs, "window")
+    let window_name = ctx
+        .eval_attr_str(attrs, "window")
         .unwrap_or_else(|| "launcher".to_string());
-    let show_run_command = ctx.eval_attr_bool(attrs, "show-run-command").unwrap_or(true);
-    let show_bins        = ctx.eval_attr_bool(attrs, "show-bins").unwrap_or(true);
+    let show_run_command = ctx
+        .eval_attr_bool(attrs, "show-run-command")
+        .unwrap_or(true);
+    let show_bins = ctx.eval_attr_bool(attrs, "show-bins").unwrap_or(true);
     let terminal: Rc<String> = Rc::new(
-        ctx.eval_attr_str(attrs, "terminal").unwrap_or_default().trim().to_string()
+        ctx.eval_attr_str(attrs, "terminal")
+            .unwrap_or_default()
+            .trim()
+            .to_string(),
     );
 
     let all_apps: Rc<Vec<gio::AppInfo>> = Rc::new(
-        gio::AppInfo::all().into_iter().filter(|a| a.should_show()).collect(),
+        gio::AppInfo::all()
+            .into_iter()
+            .filter(|a| a.should_show())
+            .collect(),
     );
     let all_bins: Rc<Vec<String>> = Rc::new(collect_path_bins());
 
@@ -68,13 +77,13 @@ pub fn build_launcher(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::Widget
 
     // ── Entry → filter results ───────────────────────────────────────────────
     {
-        let results     = results.clone();
-        let all_apps    = all_apps.clone();
-        let all_bins    = all_bins.clone();
-        let current     = current.clone();
-        let selected    = selected.clone();
+        let results = results.clone();
+        let all_apps = all_apps.clone();
+        let all_bins = all_bins.clone();
+        let current = current.clone();
+        let selected = selected.clone();
         let window_name = window_name.clone();
-        let terminal    = terminal.clone();
+        let terminal = terminal.clone();
 
         entry.connect_changed(move |e| {
             let q = e.text().to_lowercase();
@@ -83,7 +92,8 @@ pub fn build_launcher(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::Widget
 
             if !q.is_empty() {
                 // Desktop apps first.
-                let apps: Vec<ResultItem> = all_apps.iter()
+                let apps: Vec<ResultItem> = all_apps
+                    .iter()
                     .filter(|a| {
                         a.display_name().to_lowercase().contains(&q)
                             || a.name().to_lowercase().contains(&q)
@@ -95,7 +105,8 @@ pub fn build_launcher(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::Widget
                 items.extend(apps);
                 // PATH executables — shown only when :show-bins is true.
                 if show_bins {
-                    let bins: Vec<ResultItem> = all_bins.iter()
+                    let bins: Vec<ResultItem> = all_bins
+                        .iter()
                         .filter(|b| b.to_lowercase().contains(&q))
                         .take(4)
                         .cloned()
@@ -127,13 +138,13 @@ pub fn build_launcher(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::Widget
 
     // ── Keyboard navigation ───────────────────────────────────────────────────
     {
-        let entry_kc    = entry.clone();
-        let entry       = entry.clone();
-        let results     = results.clone();
-        let current     = current.clone();
-        let selected    = selected.clone();
+        let entry_kc = entry.clone();
+        let entry = entry.clone();
+        let results = results.clone();
+        let current = current.clone();
+        let selected = selected.clone();
         let window_name = window_name.clone();
-        let terminal    = terminal.clone();
+        let terminal = terminal.clone();
 
         let kc = gtk4::EventControllerKey::new();
         kc.set_propagation_phase(gtk4::PropagationPhase::Capture);
@@ -143,7 +154,9 @@ pub fn build_launcher(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::Widget
 
             match key {
                 Key::Down | Key::KP_Down => {
-                    if n == 0 { return Proceed; }
+                    if n == 0 {
+                        return Proceed;
+                    }
                     let cur = selected.get();
                     set_row_selected(&results, cur, false);
                     let next = (cur + 1).min(n - 1);
@@ -152,7 +165,9 @@ pub fn build_launcher(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::Widget
                     Stop
                 }
                 Key::Up | Key::KP_Up => {
-                    if n == 0 { return Proceed; }
+                    if n == 0 {
+                        return Proceed;
+                    }
                     let cur = selected.get();
                     set_row_selected(&results, cur, false);
                     let prev = cur.saturating_sub(1);
@@ -161,7 +176,7 @@ pub fn build_launcher(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::Widget
                     Stop
                 }
                 Key::Return | Key::KP_Enter => {
-                    let sel  = selected.get();
+                    let sel = selected.get();
                     let items = current.borrow();
                     let text = entry.text().to_string();
 
@@ -174,19 +189,21 @@ pub fn build_launcher(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::Widget
                             ResultItem::Bin(bin) => Some(bin.clone()),
                         };
                         drop(items);
-                        let wn   = window_name.clone();
-                        let e    = entry.clone();
+                        let wn = window_name.clone();
+                        let e = entry.clone();
                         let term = terminal.clone();
                         gtk4::glib::idle_add_local_once(move || {
                             e.set_text("");
-                            if let Some(c) = cmd { spawn_cmd(&bin_launch(&term, &c)); }
+                            if let Some(c) = cmd {
+                                spawn_cmd(&bin_launch(&term, &c));
+                            }
                             spawn_cmd(&format!("meh2 close {wn}"));
                         });
                     } else if show_run_command && !text.is_empty() {
                         // Literal run row — only reachable when :show-run-command true.
                         drop(items);
                         let wn = window_name.clone();
-                        let e  = entry.clone();
+                        let e = entry.clone();
                         gtk4::glib::idle_add_local_once(move || {
                             e.set_text("");
                             spawn_cmd(&text);
@@ -197,7 +214,7 @@ pub fn build_launcher(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::Widget
                 }
                 Key::Escape => {
                     let wn = window_name.clone();
-                    let e  = entry.clone();
+                    let e = entry.clone();
                     gtk4::glib::idle_add_local_once(move || {
                         e.set_text("");
                         spawn_cmd(&format!("meh2 close {wn}"));
@@ -210,7 +227,9 @@ pub fn build_launcher(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::Widget
         entry_kc.add_controller(kc);
     }
 
-    entry.connect_map(|e| { e.grab_focus(); });
+    entry.connect_map(|e| {
+        e.grab_focus();
+    });
 
     apply_common_props(&root, wu, ctx);
     Ok(root.upcast())
@@ -221,7 +240,9 @@ pub fn build_launcher(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::Widget
 fn make_app_row(app: &gio::AppInfo, selected: bool, window_name: &str) -> gtk4::Box {
     let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
     row.add_css_class("launcher-row");
-    if selected { row.add_css_class("selected"); }
+    if selected {
+        row.add_css_class("selected");
+    }
 
     if let Some(icon) = app.icon() {
         let img = gtk4::Image::from_gicon(&icon);
@@ -263,7 +284,9 @@ fn make_bin_row(bin: &str, selected: bool, window_name: &str, terminal: &str) ->
     let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
     row.add_css_class("launcher-row");
     row.add_css_class("launcher-bin-row");
-    if selected { row.add_css_class("selected"); }
+    if selected {
+        row.add_css_class("selected");
+    }
 
     let prefix = gtk4::Label::new(Some("$"));
     prefix.add_css_class("launcher-run-prefix");
@@ -280,8 +303,8 @@ fn make_bin_row(bin: &str, selected: bool, window_name: &str, terminal: &str) ->
     hint.add_css_class("launcher-desc");
     row.append(&hint);
 
-    let cmd  = bin.to_string();
-    let wn   = window_name.to_string();
+    let cmd = bin.to_string();
+    let wn = window_name.to_string();
     let term = terminal.to_string();
     let gc = gtk4::GestureClick::new();
     gc.connect_released(move |_, _, _, _| {
@@ -301,7 +324,9 @@ fn make_run_row(cmd: &str, selected: bool, window_name: &str) -> gtk4::Box {
     let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
     row.add_css_class("launcher-row");
     row.add_css_class("launcher-run-row");
-    if selected { row.add_css_class("selected"); }
+    if selected {
+        row.add_css_class("selected");
+    }
 
     let prefix = gtk4::Label::new(Some("$"));
     prefix.add_css_class("launcher-run-prefix");
@@ -349,11 +374,17 @@ fn collect_path_bins() -> Vec<String> {
     let path_var = std::env::var("PATH").unwrap_or_default();
     let mut seen = std::collections::HashSet::new();
     for dir in path_var.split(':') {
-        let Ok(entries) = std::fs::read_dir(dir) else { continue };
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            continue;
+        };
         for entry in entries.flatten() {
             let Ok(meta) = entry.metadata() else { continue };
-            if !meta.is_file() && !meta.file_type().is_symlink() { continue }
-            if meta.permissions().mode() & 0o111 == 0 { continue }
+            if !meta.is_file() && !meta.file_type().is_symlink() {
+                continue;
+            }
+            if meta.permissions().mode() & 0o111 == 0 {
+                continue;
+            }
             if let Some(name) = entry.file_name().to_str() {
                 seen.insert(name.to_string());
             }
@@ -367,7 +398,10 @@ fn collect_path_bins() -> Vec<String> {
 fn row_count(results: &gtk4::Box) -> usize {
     let mut n = 0usize;
     let mut c = results.first_child();
-    while let Some(w) = c { n += 1; c = w.next_sibling(); }
+    while let Some(w) = c {
+        n += 1;
+        c = w.next_sibling();
+    }
     n
 }
 
@@ -376,8 +410,11 @@ fn set_row_selected(results: &gtk4::Box, idx: usize, add: bool) {
     let mut c = results.first_child();
     while let Some(w) = c {
         if i == idx {
-            if add { w.add_css_class("selected"); }
-            else   { w.remove_css_class("selected"); }
+            if add {
+                w.add_css_class("selected");
+            } else {
+                w.remove_css_class("selected");
+            }
             return;
         }
         i += 1;

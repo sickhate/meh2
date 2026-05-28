@@ -11,14 +11,14 @@ use crate::{
     dynval::{ConversionError, DynVal},
 };
 use eww_shared_util::{get_locale, Span, Spanned, VarName};
-use std::{
-    collections::HashMap,
-    convert::{Infallible, TryFrom, TryInto},
-};
 #[cfg(feature = "tz")]
 use std::str::FromStr;
 #[cfg(feature = "jq")]
 use std::sync::Arc;
+use std::{
+    collections::HashMap,
+    convert::{Infallible, TryFrom, TryInto},
+};
 
 #[cfg(feature = "jq")]
 #[derive(Debug, thiserror::Error)]
@@ -108,25 +108,53 @@ impl Spanned for EvalError {
 impl SimplExpr {
     /// map over all of the variable references, replacing them with whatever expression the provided function returns.
     /// Returns [Err] when the provided function fails with an [Err]
-    pub fn try_map_var_refs<E, F: Fn(Span, VarName) -> Result<SimplExpr, E> + Copy>(self, f: F) -> Result<Self, E> {
+    pub fn try_map_var_refs<E, F: Fn(Span, VarName) -> Result<SimplExpr, E> + Copy>(
+        self,
+        f: F,
+    ) -> Result<Self, E> {
         use SimplExpr::*;
         Ok(match self {
-            BinOp(span, a, op, b) => BinOp(span, Box::new(a.try_map_var_refs(f)?), op, Box::new(b.try_map_var_refs(f)?)),
-            Concat(span, elems) => Concat(span, elems.into_iter().map(|x| x.try_map_var_refs(f)).collect::<Result<_, _>>()?),
+            BinOp(span, a, op, b) => BinOp(
+                span,
+                Box::new(a.try_map_var_refs(f)?),
+                op,
+                Box::new(b.try_map_var_refs(f)?),
+            ),
+            Concat(span, elems) => Concat(
+                span,
+                elems
+                    .into_iter()
+                    .map(|x| x.try_map_var_refs(f))
+                    .collect::<Result<_, _>>()?,
+            ),
             UnaryOp(span, op, a) => UnaryOp(span, op, Box::new(a.try_map_var_refs(f)?)),
-            IfElse(span, a, b, c) => {
-                IfElse(span, Box::new(a.try_map_var_refs(f)?), Box::new(b.try_map_var_refs(f)?), Box::new(c.try_map_var_refs(f)?))
-            }
-            JsonAccess(span, safe, a, b) => {
-                JsonAccess(span, safe, Box::new(a.try_map_var_refs(f)?), Box::new(b.try_map_var_refs(f)?))
-            }
-            FunctionCall(span, name, args) => {
-                FunctionCall(span, name, args.into_iter().map(|x| x.try_map_var_refs(f)).collect::<Result<_, _>>()?)
-            }
+            IfElse(span, a, b, c) => IfElse(
+                span,
+                Box::new(a.try_map_var_refs(f)?),
+                Box::new(b.try_map_var_refs(f)?),
+                Box::new(c.try_map_var_refs(f)?),
+            ),
+            JsonAccess(span, safe, a, b) => JsonAccess(
+                span,
+                safe,
+                Box::new(a.try_map_var_refs(f)?),
+                Box::new(b.try_map_var_refs(f)?),
+            ),
+            FunctionCall(span, name, args) => FunctionCall(
+                span,
+                name,
+                args.into_iter()
+                    .map(|x| x.try_map_var_refs(f))
+                    .collect::<Result<_, _>>()?,
+            ),
             VarRef(span, name) => f(span, name)?,
-            JsonArray(span, values) => {
-                JsonArray(span, values.into_iter().map(|x| x.try_map_var_refs(f)).collect::<Result<_, _>>()?)
-            }
+            JsonArray(span, values) => JsonArray(
+                span,
+                values
+                    .into_iter()
+                    .map(|x| x.try_map_var_refs(f))
+                    .collect::<Result<_, _>>()?,
+            ),
             JsonObject(span, entries) => JsonObject(
                 span,
                 entries
@@ -139,14 +167,20 @@ impl SimplExpr {
     }
 
     pub fn map_var_refs(self, f: impl Fn(Span, VarName) -> SimplExpr) -> Self {
-        self.try_map_var_refs(|span, var| Ok::<_, Infallible>(f(span, var))).unwrap()
+        self.try_map_var_refs(|span, var| Ok::<_, Infallible>(f(span, var)))
+            .unwrap()
     }
 
     /// resolve partially.
     /// If a var-ref links to another var-ref, that other var-ref is used.
     /// If a referenced variable is not found in the given hashmap, returns the var-ref unchanged.
     pub fn resolve_one_level(self, variables: &HashMap<VarName, SimplExpr>) -> Self {
-        self.map_var_refs(|span, name| variables.get(&name).cloned().unwrap_or(Self::VarRef(span, name)))
+        self.map_var_refs(|span, name| {
+            variables
+                .get(&name)
+                .cloned()
+                .unwrap_or(Self::VarRef(span, name))
+        })
     }
 
     /// resolve variable references in the expression. Fails if a variable cannot be resolved.
@@ -155,7 +189,11 @@ impl SimplExpr {
         self.try_map_var_refs(|span, name| match variables.get(&name) {
             Some(value) => Ok(Literal(value.clone())),
             None => {
-                let similar_ish = variables.keys().filter(|key| strsim::levenshtein(&key.0, &name.0) < 3).cloned().collect_vec();
+                let similar_ish = variables
+                    .keys()
+                    .filter(|key| strsim::levenshtein(&key.0, &name.0) < 3)
+                    .cloned()
+                    .collect_vec();
                 Err(EvalError::UnknownVariable(name.clone(), similar_ish).at(span))
             }
         })
@@ -166,7 +204,10 @@ impl SimplExpr {
         match self {
             Literal(..) => Vec::new(),
             VarRef(span, name) => vec![(*span, name)],
-            Concat(_, elems) => elems.iter().flat_map(|x| x.var_refs_with_span().into_iter()).collect(),
+            Concat(_, elems) => elems
+                .iter()
+                .flat_map(|x| x.var_refs_with_span().into_iter())
+                .collect(),
             BinOp(_, a, _, b) | JsonAccess(_, _, a, b) => {
                 let mut refs = a.var_refs_with_span();
                 refs.extend(b.var_refs_with_span().iter());
@@ -181,9 +222,14 @@ impl SimplExpr {
             }
             FunctionCall(_, _, args) => args.iter().flat_map(|a| a.var_refs_with_span()).collect(),
             JsonArray(_, values) => values.iter().flat_map(|v| v.var_refs_with_span()).collect(),
-            JsonObject(_, entries) => {
-                entries.iter().flat_map(|(k, v)| k.var_refs_with_span().into_iter().chain(v.var_refs_with_span())).collect()
-            }
+            JsonObject(_, entries) => entries
+                .iter()
+                .flat_map(|(k, v)| {
+                    k.var_refs_with_span()
+                        .into_iter()
+                        .chain(v.var_refs_with_span())
+                })
+                .collect(),
         }
     }
 
@@ -210,7 +256,11 @@ impl SimplExpr {
                 Ok(DynVal(output, *span))
             }
             SimplExpr::VarRef(span, ref name) => {
-                let similar_ish = values.keys().filter(|keys| strsim::levenshtein(&keys.0, &name.0) < 3).cloned().collect_vec();
+                let similar_ish = values
+                    .keys()
+                    .filter(|keys| strsim::levenshtein(&keys.0, &name.0) < 3)
+                    .cloned()
+                    .collect_vec();
                 Ok(values
                     .get(name)
                     .cloned()
@@ -225,7 +275,8 @@ impl SimplExpr {
                     BinOp::And => DynVal::from(a.as_bool()? && b()?.as_bool()?),
                     BinOp::Or => DynVal::from(a.as_bool()? || b()?.as_bool()?),
                     BinOp::Elvis => {
-                        let is_null = matches!(serde_json::from_str(&a.0), Ok(serde_json::Value::Null));
+                        let is_null =
+                            matches!(serde_json::from_str(&a.0), Ok(serde_json::Value::Null));
                         if a.0.is_empty() || is_null {
                             b()?
                         } else {
@@ -287,7 +338,8 @@ impl SimplExpr {
                 match val.as_json_value()? {
                     serde_json::Value::Array(val) => {
                         let index = index.as_i32()?;
-                        let indexed_value = val.get(index as usize).unwrap_or(&serde_json::Value::Null);
+                        let indexed_value =
+                            val.get(index as usize).unwrap_or(&serde_json::Value::Null);
                         Ok(DynVal::from(indexed_value).at(*span))
                     }
                     serde_json::Value::Object(val) => {
@@ -297,13 +349,20 @@ impl SimplExpr {
                             .unwrap_or(&serde_json::Value::Null);
                         Ok(DynVal::from(indexed_value).at(*span))
                     }
-                    serde_json::Value::Null if is_safe => Ok(DynVal::from(&serde_json::Value::Null).at(*span)),
+                    serde_json::Value::Null if is_safe => {
+                        Ok(DynVal::from(&serde_json::Value::Null).at(*span))
+                    }
                     _ => Err(EvalError::CannotIndex(format!("{}", val)).at(*span)),
                 }
             }
             SimplExpr::FunctionCall(span, function_name, args) => {
-                let args = args.iter().map(|a| a.eval(values)).collect::<Result<_, EvalError>>()?;
-                call_expr_function(function_name, args).map(|x| x.at(*span)).map_err(|e| e.at(*span))
+                let args = args
+                    .iter()
+                    .map(|a| a.eval(values))
+                    .collect::<Result<_, EvalError>>()?;
+                call_expr_function(function_name, args)
+                    .map(|x| x.at(*span))
+                    .map_err(|e| e.at(*span))
             }
             SimplExpr::JsonArray(span, entries) => {
                 let entries = entries
@@ -315,7 +374,12 @@ impl SimplExpr {
             SimplExpr::JsonObject(span, entries) => {
                 let entries = entries
                     .iter()
-                    .map(|(k, v)| Ok((k.eval(values)?.as_string()?, serde_json::Value::String(v.eval(values)?.as_string()?))))
+                    .map(|(k, v)| {
+                        Ok((
+                            k.eval(values)?.as_string()?,
+                            serde_json::Value::String(v.eval(values)?.as_string()?),
+                        ))
+                    })
                     .collect::<Result<_, EvalError>>()?;
                 Ok(DynVal::try_from(serde_json::Value::Object(entries))?.at(*span))
             }
@@ -442,7 +506,11 @@ fn call_expr_function(name: &str, args: Vec<DynVal>) -> Result<DynVal, EvalError
                 let string = string.as_string()?;
                 let pattern = regex::Regex::new(&pattern.as_string()?)?;
                 let replacement = replacement.as_string()?;
-                Ok(DynVal::from(pattern.replace_all(&string, replacement.replace('$', "$$").replace('\\', "$")).into_owned()))
+                Ok(DynVal::from(
+                    pattern
+                        .replace_all(&string, replacement.replace('$', "$$").replace('\\', "$"))
+                        .into_owned(),
+                ))
             }
             _ => Err(EvalError::WrongArgCount(name.to_string())),
         },
@@ -463,8 +531,13 @@ fn call_expr_function(name: &str, args: Vec<DynVal>) -> Result<DynVal, EvalError
                 use serde_json::Value;
                 let string = string.as_string()?;
                 let pattern = regex::Regex::new(&pattern.as_string()?)?;
-                Ok(Value::Array(pattern.find_iter(&string).map(|x| Value::String(x.as_str().to_string())).collect())
-                    .try_into()?)
+                Ok(Value::Array(
+                    pattern
+                        .find_iter(&string)
+                        .map(|x| Value::String(x.as_str().to_string()))
+                        .collect(),
+                )
+                .try_into()?)
             }
             _ => Err(EvalError::WrongArgCount(name.to_string())),
         },
@@ -477,7 +550,13 @@ fn call_expr_function(name: &str, args: Vec<DynVal>) -> Result<DynVal, EvalError
                     pattern
                         .captures_iter(&string)
                         .map(|captures| {
-                            Value::Array(captures.iter().flatten().map(|x| Value::String(x.as_str().to_string())).collect())
+                            Value::Array(
+                                captures
+                                    .iter()
+                                    .flatten()
+                                    .map(|x| Value::String(x.as_str().to_string()))
+                                    .collect(),
+                            )
                         })
                         .collect(),
                 )
@@ -501,8 +580,10 @@ fn call_expr_function(name: &str, args: Vec<DynVal>) -> Result<DynVal, EvalError
         "jq" => match args.as_slice() {
             [json, code] => run_jaq_function(json.as_json_value()?, code.as_string()?, "")
                 .map_err(|e| EvalError::Spanned(code.span(), Box::new(e))),
-            [json, code, args] => run_jaq_function(json.as_json_value()?, code.as_string()?, &args.as_string()?)
-                .map_err(|e| EvalError::Spanned(code.span(), Box::new(e))),
+            [json, code, args] => {
+                run_jaq_function(json.as_json_value()?, code.as_string()?, &args.as_string()?)
+                    .map_err(|e| EvalError::Spanned(code.span(), Box::new(e)))
+            }
             _ => Err(EvalError::WrongArgCount(name.to_string())),
         },
         "formattime" => match args.as_slice() {
@@ -513,31 +594,45 @@ fn call_expr_function(name: &str, args: Vec<DynVal>) -> Result<DynVal, EvalError
                     Err(_) => return Err(EvalError::ChronoError("Invalid timezone".to_string())),
                 };
 
-                Ok(DynVal::from(match timezone.timestamp_opt(timestamp.as_i64()?, 0) {
+                Ok(DynVal::from(
+                    match timezone.timestamp_opt(timestamp.as_i64()?, 0) {
+                        LocalResult::Single(t) | LocalResult::Ambiguous(t, _) => {
+                            let format = format.as_string()?;
+                            let delayed_format = t.format_localized(&format, get_locale());
+                            let mut buffer = String::new();
+                            if delayed_format.write_to(&mut buffer).is_err() {
+                                return Err(EvalError::ChronoError(
+                                    "Invalid time formatting string: ".to_string() + &format,
+                                ));
+                            }
+                            buffer
+                        }
+                        LocalResult::None => {
+                            return Err(EvalError::ChronoError(
+                                "Invalid UNIX timestamp".to_string(),
+                            ))
+                        }
+                    },
+                ))
+            }
+            [timestamp, format] => Ok(DynVal::from(
+                match Local.timestamp_opt(timestamp.as_i64()?, 0) {
                     LocalResult::Single(t) | LocalResult::Ambiguous(t, _) => {
                         let format = format.as_string()?;
                         let delayed_format = t.format_localized(&format, get_locale());
                         let mut buffer = String::new();
                         if delayed_format.write_to(&mut buffer).is_err() {
-                            return Err(EvalError::ChronoError("Invalid time formatting string: ".to_string() + &format));
+                            return Err(EvalError::ChronoError(
+                                "Invalid time formatting string: ".to_string() + &format,
+                            ));
                         }
                         buffer
                     }
-                    LocalResult::None => return Err(EvalError::ChronoError("Invalid UNIX timestamp".to_string())),
-                }))
-            }
-            [timestamp, format] => Ok(DynVal::from(match Local.timestamp_opt(timestamp.as_i64()?, 0) {
-                LocalResult::Single(t) | LocalResult::Ambiguous(t, _) => {
-                    let format = format.as_string()?;
-                    let delayed_format = t.format_localized(&format, get_locale());
-                    let mut buffer = String::new();
-                    if delayed_format.write_to(&mut buffer).is_err() {
-                        return Err(EvalError::ChronoError("Invalid time formatting string: ".to_string() + &format));
+                    LocalResult::None => {
+                        return Err(EvalError::ChronoError("Invalid UNIX timestamp".to_string()))
                     }
-                    buffer
-                }
-                LocalResult::None => return Err(EvalError::ChronoError("Invalid UNIX timestamp".to_string())),
-            })),
+                },
+            )),
             _ => Err(EvalError::WrongArgCount(name.to_string())),
         },
         "log" => match args.as_slice() {
@@ -574,7 +669,11 @@ fn call_expr_function(name: &str, args: Vec<DynVal>) -> Result<DynVal, EvalError
                 }
                 _ => return Err(EvalError::ByteFormatModeError(mode)),
             };
-            Ok(DynVal::from(if neg { format!("-{disp}") } else { disp.to_string() }))
+            Ok(DynVal::from(if neg {
+                format!("-{disp}")
+            } else {
+                disp.to_string()
+            }))
         }
 
         _ => Err(EvalError::UnknownFunction(name.to_string())),
@@ -587,7 +686,11 @@ fn prepare_jaq_filter(code: String) -> Result<Arc<jaq_interpret::Filter>, EvalEr
     let (filter, mut errors) = jaq_parse::parse(&code, jaq_parse::main());
     let filter = match filter {
         Some(x) => x,
-        None => return Err(EvalError::JaqParseError(Box::new(JaqParseError(errors.pop())))),
+        None => {
+            return Err(EvalError::JaqParseError(Box::new(JaqParseError(
+                errors.pop(),
+            ))))
+        }
     };
     let mut defs = jaq_interpret::ParseCtx::new(Vec::new());
     defs.insert_natives(jaq_core::core());
@@ -596,16 +699,25 @@ fn prepare_jaq_filter(code: String) -> Result<Arc<jaq_interpret::Filter>, EvalEr
     let filter = defs.compile(filter);
 
     if let Some(error) = errors.pop() {
-        return Err(EvalError::JaqParseError(Box::new(JaqParseError(Some(error)))));
+        return Err(EvalError::JaqParseError(Box::new(JaqParseError(Some(
+            error,
+        )))));
     }
     Ok(Arc::new(filter))
 }
 
 #[cfg(feature = "jq")]
-fn run_jaq_function(json: serde_json::Value, code: String, args: &str) -> Result<DynVal, EvalError> {
+fn run_jaq_function(
+    json: serde_json::Value,
+    code: String,
+    args: &str,
+) -> Result<DynVal, EvalError> {
     use jaq_interpret::{Ctx, RcIter, Val};
     prepare_jaq_filter(code)?
-        .run((Ctx::new([], &RcIter::new(std::iter::empty())), Val::from(json)))
+        .run((
+            Ctx::new([], &RcIter::new(std::iter::empty())),
+            Val::from(json),
+        ))
         .map(|r| r.map(Into::<serde_json::Value>::into))
         .map(|x| {
             x.map(|val| match (args, val) {

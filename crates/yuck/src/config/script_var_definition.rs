@@ -45,7 +45,9 @@ impl ScriptVarDefinition {
 
     pub fn initial_value(&self) -> DynVal {
         match self {
-            ScriptVarDefinition::Poll(x) => x.initial_value.clone()
+            ScriptVarDefinition::Poll(x) => x
+                .initial_value
+                .clone()
                 .unwrap_or_else(|| DynVal::from_string(String::new())),
             ScriptVarDefinition::Listen(x) => x.initial_value.clone(),
             ScriptVarDefinition::Subscribe(x) => x.initial_value.clone(),
@@ -75,17 +77,27 @@ pub struct PollScriptVar {
 impl FromAstElementContent for PollScriptVar {
     const ELEMENT_NAME: &'static str = "defpoll";
 
-    fn from_tail<I: Iterator<Item = Ast>>(_span: Span, mut iter: AstIterator<I>) -> DiagResult<Self> {
+    fn from_tail<I: Iterator<Item = Ast>>(
+        _span: Span,
+        mut iter: AstIterator<I>,
+    ) -> DiagResult<Self> {
         let result: DiagResult<_> = (move || {
             let (name_span, name) = iter.expect_symbol()?;
             let mut attrs = iter.expect_key_values()?;
-            let initial_value = Some(attrs.primitive_optional("initial")?.unwrap_or_else(|| DynVal::from_string(String::new())));
-            let interval =
-                attrs.primitive_required::<DynVal, _>("interval")?.as_duration().map_err(|e| DiagError(e.to_diagnostic()))?;
+            let initial_value = Some(
+                attrs
+                    .primitive_optional("initial")?
+                    .unwrap_or_else(|| DynVal::from_string(String::new())),
+            );
+            let interval = attrs
+                .primitive_required::<DynVal, _>("interval")?
+                .as_duration()
+                .map_err(|e| DiagError(e.to_diagnostic()))?;
             let (script_span, script) = iter.expect_literal()?;
 
-            let run_while_expr =
-                attrs.ast_optional::<SimplExpr>("run-while")?.unwrap_or_else(|| SimplExpr::Literal(DynVal::from(true)));
+            let run_while_expr = attrs
+                .ast_optional::<SimplExpr>("run-while")?
+                .unwrap_or_else(|| SimplExpr::Literal(DynVal::from(true)));
 
             iter.expect_done()?;
             Ok(Self {
@@ -112,14 +124,25 @@ pub struct ListenScriptVar {
 impl FromAstElementContent for ListenScriptVar {
     const ELEMENT_NAME: &'static str = "deflisten";
 
-    fn from_tail<I: Iterator<Item = Ast>>(_span: Span, mut iter: AstIterator<I>) -> DiagResult<Self> {
+    fn from_tail<I: Iterator<Item = Ast>>(
+        _span: Span,
+        mut iter: AstIterator<I>,
+    ) -> DiagResult<Self> {
         let result: DiagResult<_> = (move || {
             let (name_span, name) = iter.expect_symbol()?;
             let mut attrs = iter.expect_key_values()?;
-            let initial_value = attrs.primitive_optional("initial")?.unwrap_or_else(|| DynVal::from_string(String::new()));
+            let initial_value = attrs
+                .primitive_optional("initial")?
+                .unwrap_or_else(|| DynVal::from_string(String::new()));
             let (command_span, script) = iter.expect_literal()?;
             iter.expect_done()?;
-            Ok(Self { name_span, name: VarName(name), command: script.to_string(), initial_value, command_span })
+            Ok(Self {
+                name_span,
+                name: VarName(name),
+                command: script.to_string(),
+                initial_value,
+                command_span,
+            })
         })();
         result.note(r#"Expected format: `(deflisten name :initial "0" "tail -f /tmp/example")`"#)
     }
@@ -174,12 +197,16 @@ pub struct SubscribeScriptVar {
 impl FromAstElementContent for SubscribeScriptVar {
     const ELEMENT_NAME: &'static str = "defsubscribe";
 
-    fn from_tail<I: Iterator<Item = Ast>>(_span: Span, mut iter: AstIterator<I>) -> DiagResult<Self> {
+    fn from_tail<I: Iterator<Item = Ast>>(
+        _span: Span,
+        mut iter: AstIterator<I>,
+    ) -> DiagResult<Self> {
         let result: DiagResult<_> = (move || {
             let (name_span, name) = iter.expect_symbol()?;
             let mut attrs = iter.expect_key_values()?;
-            let initial_value =
-                attrs.primitive_optional("initial")?.unwrap_or_else(|| DynVal::from_string(String::new()));
+            let initial_value = attrs
+                .primitive_optional("initial")?
+                .unwrap_or_else(|| DynVal::from_string(String::new()));
 
             let source = if let Some(path) = attrs.primitive_optional::<String, _>("file")? {
                 SubscribeSource::File { path }
@@ -187,8 +214,9 @@ impl FromAstElementContent for SubscribeScriptVar {
                 let object = attrs.primitive_required::<String, _>("dbus-object")?;
                 let interface = attrs.primitive_required::<String, _>("dbus-iface")?;
                 let property = attrs.primitive_required::<String, _>("dbus-prop")?;
-                let bus_str =
-                    attrs.primitive_optional::<String, _>("dbus-bus")?.unwrap_or_else(|| "session".to_string());
+                let bus_str = attrs
+                    .primitive_optional::<String, _>("dbus-bus")?
+                    .unwrap_or_else(|| "session".to_string());
                 let bus = match bus_str.as_str() {
                     "system" => DbusKind::System,
                     "session" => DbusKind::Session,
@@ -199,7 +227,13 @@ impl FromAstElementContent for SubscribeScriptVar {
                         }))
                     }
                 };
-                SubscribeSource::Dbus { bus, service, object, interface, property }
+                SubscribeSource::Dbus {
+                    bus,
+                    service,
+                    object,
+                    interface,
+                    property,
+                }
             } else {
                 return Err(DiagError(gen_diagnostic! {
                     msg = "defsubscribe requires either :file or :dbus-service attribute",
@@ -208,7 +242,12 @@ impl FromAstElementContent for SubscribeScriptVar {
             };
 
             iter.expect_done()?;
-            Ok(Self { name: VarName(name), name_span, initial_value, source })
+            Ok(Self {
+                name: VarName(name),
+                name_span,
+                initial_value,
+                source,
+            })
         })();
         result.note(concat!(
             "Expected format:\n",

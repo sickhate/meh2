@@ -21,14 +21,18 @@ lalrpop_mod!(
 pub fn parse_string(file_id: usize, s: &str) -> DiagResult<Ast> {
     let lexer = lexer::Lexer::new(file_id, s.to_string());
     let parser = parser::AstParser::new();
-    parser.parse(file_id, lexer).map_err(|e| DiagError::from_parse_error(file_id, e))
+    parser
+        .parse(file_id, lexer)
+        .map_err(|e| DiagError::from_parse_error(file_id, e))
 }
 
 /// Parse multiple toplevel nodes into a list of [Ast]
 pub fn parse_toplevel(file_id: usize, s: String) -> DiagResult<(Span, Vec<Ast>)> {
     let lexer = lexer::Lexer::new(file_id, s);
     let parser = parser::ToplevelParser::new();
-    parser.parse(file_id, lexer).map_err(|e| DiagError::from_parse_error(file_id, e))
+    parser
+        .parse(file_id, lexer)
+        .map_err(|e| DiagError::from_parse_error(file_id, e))
 }
 
 /// get a single ast node from a list of asts, returning an Err if the length is not exactly 1.

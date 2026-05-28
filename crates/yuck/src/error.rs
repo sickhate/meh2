@@ -36,7 +36,10 @@ impl DiagError {
     }
 }
 
-pub fn get_parse_error_span<T, E: Spanned>(file_id: usize, err: &lalrpop_util::ParseError<usize, T, E>) -> Span {
+pub fn get_parse_error_span<T, E: Spanned>(
+    file_id: usize,
+    err: &lalrpop_util::ParseError<usize, T, E>,
+) -> Span {
     use lalrpop_util::ParseError::*;
     match err {
         InvalidToken { location } => Span(*location, *location, file_id),

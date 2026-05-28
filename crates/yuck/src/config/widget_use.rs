@@ -50,7 +50,11 @@ impl BasicWidgetUse {
         if self.children.is_empty() {
             self.span.point_span_at_end().shifted(-1)
         } else {
-            self.children.first().unwrap().span().to(self.children.last().unwrap().span())
+            self.children
+                .first()
+                .unwrap()
+                .span()
+                .to(self.children.last().unwrap().span())
         }
     }
 
@@ -61,15 +65,26 @@ impl BasicWidgetUse {
         mut iter: AstIterator<I>,
     ) -> DiagResult<Self> {
         let attrs = iter.expect_key_values()?;
-        let children = iter.map(WidgetUse::from_ast).collect::<DiagResult<Vec<_>>>()?;
-        Ok(Self { name, attrs, children, span, name_span })
+        let children = iter
+            .map(WidgetUse::from_ast)
+            .collect::<DiagResult<Vec<_>>>()?;
+        Ok(Self {
+            name,
+            attrs,
+            children,
+            span,
+            name_span,
+        })
     }
 }
 
 impl FromAstElementContent for LoopWidgetUse {
     const ELEMENT_NAME: &'static str = "for";
 
-    fn from_tail<I: Iterator<Item = Ast>>(span: Span, mut iter: AstIterator<I>) -> DiagResult<Self> {
+    fn from_tail<I: Iterator<Item = Ast>>(
+        span: Span,
+        mut iter: AstIterator<I>,
+    ) -> DiagResult<Self> {
         let (_element_name_span, element_name) = iter.expect_symbol()?;
         let (in_string_span, in_string) = iter.expect_symbol()?;
         if in_string != "in" {
@@ -79,7 +94,11 @@ impl FromAstElementContent for LoopWidgetUse {
             }));
         }
         let (elements_span, elements_expr) = iter.expect_simplexpr()?;
-        let body = iter.expect_any().map_err(DiagError::from).note("Expected a loop body").and_then(WidgetUse::from_ast)?;
+        let body = iter
+            .expect_any()
+            .map_err(DiagError::from)
+            .note("Expected a loop body")
+            .and_then(WidgetUse::from_ast)?;
         iter.expect_done()?;
         Ok(Self {
             element_name: VarName(element_name),
@@ -94,7 +113,10 @@ impl FromAstElementContent for LoopWidgetUse {
 impl FromAstElementContent for ChildrenWidgetUse {
     const ELEMENT_NAME: &'static str = "children";
 
-    fn from_tail<I: Iterator<Item = Ast>>(span: Span, mut iter: AstIterator<I>) -> DiagResult<Self> {
+    fn from_tail<I: Iterator<Item = Ast>>(
+        span: Span,
+        mut iter: AstIterator<I>,
+    ) -> DiagResult<Self> {
         let mut attrs = iter.expect_key_values()?;
         let nth_expr = attrs.ast_optional("nth")?;
         iter.expect_done()?;
@@ -111,9 +133,15 @@ impl FromAst for WidgetUse {
             let mut iter = e.try_ast_iter()?;
             let (name_span, name) = iter.expect_symbol()?;
             match name.as_ref() {
-                LoopWidgetUse::ELEMENT_NAME => Ok(WidgetUse::Loop(LoopWidgetUse::from_tail(span, iter)?)),
-                ChildrenWidgetUse::ELEMENT_NAME => Ok(WidgetUse::Children(ChildrenWidgetUse::from_tail(span, iter)?)),
-                _ => Ok(WidgetUse::Basic(BasicWidgetUse::from_iter(span, name, name_span, iter)?)),
+                LoopWidgetUse::ELEMENT_NAME => {
+                    Ok(WidgetUse::Loop(LoopWidgetUse::from_tail(span, iter)?))
+                }
+                ChildrenWidgetUse::ELEMENT_NAME => Ok(WidgetUse::Children(
+                    ChildrenWidgetUse::from_tail(span, iter)?,
+                )),
+                _ => Ok(WidgetUse::Basic(BasicWidgetUse::from_iter(
+                    span, name, name_span, iter,
+                )?)),
             }
         }
     }

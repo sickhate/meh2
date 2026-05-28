@@ -3,15 +3,15 @@
 
 use std::{
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc,
+        atomic::{AtomicBool, Ordering},
     },
     time::Duration,
 };
 
 use anyhow::Result;
 use eww_shared_util::VarName;
-use meh_core::{ipc_read, ipc_write, IpcCmd, IpcResponse, MehConfig, MehPaths};
+use meh_core::{IpcCmd, IpcResponse, MehConfig, MehPaths, ipc_read, ipc_write};
 use simplexpr::dynval::DynVal;
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -47,7 +47,9 @@ pub fn run(paths: MehPaths, daemonize: bool) -> Result<()> {
             let _ = nix::sys::signal::kill(pid, nix::sys::signal::Signal::SIGTERM);
             let deadline = std::time::Instant::now() + std::time::Duration::from_millis(800);
             while std::time::Instant::now() < deadline {
-                if nix::sys::signal::kill(pid, None).is_err() { break; }
+                if nix::sys::signal::kill(pid, None).is_err() {
+                    break;
+                }
                 std::thread::sleep(std::time::Duration::from_millis(50));
             }
             let _ = nix::sys::signal::kill(pid, nix::sys::signal::Signal::SIGKILL);
@@ -95,7 +97,13 @@ pub fn run(paths: MehPaths, daemonize: bool) -> Result<()> {
     let window_closed = Arc::new(tokio::sync::Notify::new());
 
     // Build App (GTK-thread-local)
-    let mut app = meh_gtk4::App::new(paths.clone(), config, windows_open.clone(), window_opened.clone(), window_closed.clone());
+    let mut app = meh_gtk4::App::new(
+        paths.clone(),
+        config,
+        windows_open.clone(),
+        window_opened.clone(),
+        window_closed.clone(),
+    );
     app.apply_css();
 
     // Channel for IPC commands (tokio unbounded; received in GTK thread via spawn_local)
@@ -103,7 +111,7 @@ pub fn run(paths: MehPaths, daemonize: bool) -> Result<()> {
 
     // Clone script vars for the async thread
     let script_vars = app.config.yuck.script_vars.clone();
-    let config_dir  = paths.config_dir.clone();
+    let config_dir = paths.config_dir.clone();
 
     // Spawn the tokio runtime on a background thread
     let cmd_tx2 = cmd_tx.clone();
@@ -117,7 +125,7 @@ pub fn run(paths: MehPaths, daemonize: bool) -> Result<()> {
                 .build()
                 .expect("tokio runtime");
             meh_gtk4::set_tokio_handle(rt.handle().clone());
-    meh_gtk4::set_config_dir(config_dir.clone());
+            meh_gtk4::set_config_dir(config_dir.clone());
             rt.block_on(async move {
                 let ipc = tokio::spawn(run_ipc_server(socket, cmd_tx2.clone()));
                 let sig = tokio::spawn({
@@ -150,7 +158,12 @@ pub fn run(paths: MehPaths, daemonize: bool) -> Result<()> {
                 drop(var_tx);
 
                 let tx_vars = cmd_tx2.clone();
-                let vars_fwd = tokio::spawn(forward_var_updates(var_rx, tx_vars, windows_open.clone(), window_opened.clone()));
+                let vars_fwd = tokio::spawn(forward_var_updates(
+                    var_rx,
+                    tx_vars,
+                    windows_open.clone(),
+                    window_opened.clone(),
+                ));
                 let _ = tokio::join!(ipc, sig, vars_fwd);
             });
         })?;
@@ -201,7 +214,8 @@ pub fn run(paths: MehPaths, daemonize: bool) -> Result<()> {
                         app.handle_cmd(cmd);
                     }));
                     if let Err(e) = result {
-                        let msg = e.downcast_ref::<String>()
+                        let msg = e
+                            .downcast_ref::<String>()
                             .map(|s| s.as_str())
                             .or_else(|| e.downcast_ref::<&str>().copied())
                             .unwrap_or("unknown panic");
@@ -305,10 +319,7 @@ async fn run_ipc_server(
     Ok(())
 }
 
-async fn handle_connection(
-    stream: tokio::net::UnixStream,
-    cmd_tx: UnboundedSender<meh_gtk4::Cmd>,
-) {
+async fn handle_connection(stream: tokio::net::UnixStream, cmd_tx: UnboundedSender<meh_gtk4::Cmd>) {
     let (mut reader, mut writer) = tokio::io::split(stream);
 
     let cmd: IpcCmd = match ipc_read(&mut reader).await {
@@ -326,10 +337,7 @@ async fn handle_connection(
     }
 }
 
-async fn dispatch_cmd(
-    cmd: IpcCmd,
-    cmd_tx: &UnboundedSender<meh_gtk4::Cmd>,
-) -> IpcResponse {
+async fn dispatch_cmd(cmd: IpcCmd, cmd_tx: &UnboundedSender<meh_gtk4::Cmd>) -> IpcResponse {
     match cmd {
         IpcCmd::Ping => IpcResponse::ok("pong"),
 
@@ -371,14 +379,18 @@ async fn dispatch_cmd(
     }
 }
 
-fn ipc_to_gtk_cmd(
-    cmd: IpcCmd,
-    resp: tokio::sync::oneshot::Sender<IpcResponse>,
-) -> meh_gtk4::Cmd {
+fn ipc_to_gtk_cmd(cmd: IpcCmd, resp: tokio::sync::oneshot::Sender<IpcResponse>) -> meh_gtk4::Cmd {
     match cmd {
-        IpcCmd::Open { window, toggle, monitor } => {
-            meh_gtk4::Cmd::Open { window, toggle, monitor, resp }
-        }
+        IpcCmd::Open {
+            window,
+            toggle,
+            monitor,
+        } => meh_gtk4::Cmd::Open {
+            window,
+            toggle,
+            monitor,
+            resp,
+        },
         IpcCmd::Close { windows } => meh_gtk4::Cmd::Close { windows, resp },
         IpcCmd::CloseAll => meh_gtk4::Cmd::CloseAll { resp },
         IpcCmd::Reload => meh_gtk4::Cmd::Reload { resp },
@@ -394,7 +406,7 @@ fn ipc_to_gtk_cmd(
 // ── Daemonize (double-fork) ───────────────────────────────────────────────────
 
 fn double_fork() -> Result<()> {
-    use nix::unistd::{fork, setsid, ForkResult};
+    use nix::unistd::{ForkResult, fork, setsid};
 
     match unsafe { fork()? } {
         ForkResult::Child => {}

@@ -44,15 +44,23 @@ pub struct WindowDefinition {
 
 impl WindowDefinition {
     /// Evaluate the `monitor` field of the window definition
-    pub fn eval_monitor(&self, local_variables: &HashMap<VarName, DynVal>) -> Result<Option<MonitorIdentifier>, EvalError> {
+    pub fn eval_monitor(
+        &self,
+        local_variables: &HashMap<VarName, DynVal>,
+    ) -> Result<Option<MonitorIdentifier>, EvalError> {
         Ok(match &self.monitor {
-            Some(monitor_expr) => Some(MonitorIdentifier::from_dynval(&monitor_expr.eval(local_variables)?)?),
+            Some(monitor_expr) => Some(MonitorIdentifier::from_dynval(
+                &monitor_expr.eval(local_variables)?,
+            )?),
             None => None,
         })
     }
 
     /// Evaluate the `resizable` field of the window definition
-    pub fn eval_resizable(&self, local_variables: &HashMap<VarName, DynVal>) -> Result<bool, EvalError> {
+    pub fn eval_resizable(
+        &self,
+        local_variables: &HashMap<VarName, DynVal>,
+    ) -> Result<bool, EvalError> {
         Ok(match &self.resizable {
             Some(expr) => expr.eval(local_variables)?.as_bool()?,
             None => true,
@@ -77,19 +85,38 @@ impl WindowDefinition {
 impl FromAstElementContent for WindowDefinition {
     const ELEMENT_NAME: &'static str = "defwindow";
 
-    fn from_tail<I: Iterator<Item = Ast>>(_span: Span, mut iter: AstIterator<I>) -> DiagResult<Self> {
+    fn from_tail<I: Iterator<Item = Ast>>(
+        _span: Span,
+        mut iter: AstIterator<I>,
+    ) -> DiagResult<Self> {
         let (_, name) = iter.expect_symbol()?;
         let (args_span, expected_args) = iter.expect_array().unwrap_or((Span::DUMMY, Vec::new()));
-        let expected_args = expected_args.into_iter().map(AttrSpec::from_ast).collect::<DiagResult<_>>()?;
+        let expected_args = expected_args
+            .into_iter()
+            .map(AttrSpec::from_ast)
+            .collect::<DiagResult<_>>()?;
         let mut attrs = iter.expect_key_values()?;
         let monitor = attrs.ast_optional("monitor")?;
         let resizable = attrs.ast_optional("resizable")?;
         let stacking = attrs.ast_optional("stacking")?;
         let geometry = attrs.ast_optional("geometry")?;
         let backend_options = BackendWindowOptionsDef::from_attrs(&mut attrs)?;
-        let widget = iter.expect_any().map_err(DiagError::from).and_then(WidgetUse::from_ast)?;
+        let widget = iter
+            .expect_any()
+            .map_err(DiagError::from)
+            .and_then(WidgetUse::from_ast)?;
         iter.expect_done()?;
-        Ok(Self { name, expected_args, args_span, monitor, resizable, widget, stacking, geometry, backend_options })
+        Ok(Self {
+            name,
+            expected_args,
+            args_span,
+            monitor,
+            resizable,
+            widget,
+            stacking,
+            geometry,
+            backend_options,
+        })
     }
 }
 
@@ -100,7 +127,12 @@ pub struct EnumParseError {
 }
 impl Display for EnumParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Failed to parse `{}`, must be one of {}", self.input, self.expected.join(", "))
+        write!(
+            f,
+            "Failed to parse `{}`, must be one of {}",
+            self.input,
+            self.expected.join(", ")
+        )
     }
 }
 
@@ -127,7 +159,16 @@ macro_rules! enum_parse {
     };
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, derive_more::Display, smart_default::SmartDefault, serde::Serialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    derive_more::Display,
+    smart_default::SmartDefault,
+    serde::Serialize,
+)]
 pub enum WindowStacking {
     #[default]
     Foreground,

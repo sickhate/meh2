@@ -1,6 +1,6 @@
 // MIT — ported from elkowar/eww crates/notifier_host/src/icon.rs
 // GTK3-specific Pixbuf removed; returns IconResult for the GTK4 thread to consume.
-use crate::{proxy, IconResult};
+use crate::{IconResult, proxy};
 
 #[derive(thiserror::Error, Debug)]
 enum IconError {
@@ -23,9 +23,9 @@ fn icon_from_pixmaps(pixmaps: Vec<(i32, i32, Vec<u8>)>, size: i32) -> Option<Ico
             let a1 = w1 * h1;
             let a2 = w2 * h2;
             match (a1 >= a, a2 >= a) {
-                (true, true)   => a2.cmp(&a1),
-                (true, false)  => std::cmp::Ordering::Greater,
-                (false, true)  => std::cmp::Ordering::Less,
+                (true, true) => a2.cmp(&a1),
+                (true, false) => std::cmp::Ordering::Greater,
+                (false, true) => std::cmp::Ordering::Less,
                 (false, false) => a1.cmp(&a2),
             }
         })
@@ -41,7 +41,11 @@ fn icon_from_pixmaps(pixmaps: Vec<(i32, i32, Vec<u8>)>, size: i32) -> Option<Ico
                 chunk[2] = b;
                 chunk[3] = a;
             }
-            IconResult::Pixmap { width: w, height: h, rgba: data }
+            IconResult::Pixmap {
+                width: w,
+                height: h,
+                rgba: data,
+            }
         })
 }
 
@@ -49,10 +53,7 @@ fn icon_from_pixmaps(pixmaps: Vec<(i32, i32, Vec<u8>)>, size: i32) -> Option<Ico
 /// GTK4 thread can turn into a widget.
 ///
 /// Prefer icon-name (theme lookup) over pixmap, per the SNI specification.
-pub async fn load_icon_from_sni(
-    sni: &proxy::StatusNotifierItemProxy<'_>,
-    size: i32,
-) -> IconResult {
+pub async fn load_icon_from_sni(sni: &proxy::StatusNotifierItemProxy<'_>, size: i32) -> IconResult {
     let icon_from_name: Result<IconResult, IconError> = (async {
         let icon_name = sni.icon_name().await;
         tracing::debug!("dbus: {} icon_name -> {:?}", sni.destination(), icon_name);
@@ -64,17 +65,23 @@ pub async fn load_icon_from_sni(
 
         // Absolute path → the GTK thread will load the file directly.
         if std::path::Path::new(&icon_name).is_absolute() {
-            return Ok(IconResult::Named { name: icon_name, theme_path: None });
+            return Ok(IconResult::Named {
+                name: icon_name,
+                theme_path: None,
+            });
         }
 
         let icon_theme_path = sni.icon_theme_path().await;
-        tracing::debug!("dbus: {} icon_theme_path -> {:?}", sni.destination(), icon_theme_path);
+        tracing::debug!(
+            "dbus: {} icon_theme_path -> {:?}",
+            sni.destination(),
+            icon_theme_path
+        );
         let theme_path = match icon_theme_path {
             Ok(p) if p.is_empty() => None,
             Ok(p) => Some(p),
             Err(zbus::Error::FDO(e)) => match *e {
-                zbus::fdo::Error::UnknownProperty(_)
-                | zbus::fdo::Error::InvalidArgs(_) => None,
+                zbus::fdo::Error::UnknownProperty(_) | zbus::fdo::Error::InvalidArgs(_) => None,
                 // discord, blueman-applet report this
                 zbus::fdo::Error::Failed(ref msg) if msg == "error occurred in Get" => None,
                 _ => return Err(IconError::DBusTheme(zbus::Error::FDO(e))),
@@ -82,7 +89,10 @@ pub async fn load_icon_from_sni(
             Err(e) => return Err(IconError::DBusTheme(e)),
         };
 
-        Ok(IconResult::Named { name: icon_name, theme_path })
+        Ok(IconResult::Named {
+            name: icon_name,
+            theme_path,
+        })
     })
     .await;
 

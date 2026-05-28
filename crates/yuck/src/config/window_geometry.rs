@@ -17,7 +17,17 @@ use simplexpr::{
     SimplExpr,
 };
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, smart_default::SmartDefault, Serialize, Deserialize, strum::Display)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Eq,
+    PartialEq,
+    smart_default::SmartDefault,
+    Serialize,
+    Deserialize,
+    strum::Display,
+)]
 pub enum AnchorAlignment {
     #[strum(serialize = "start")]
     #[default]
@@ -96,14 +106,25 @@ impl std::str::FromStr for AnchorPoint {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if s == "center" {
-            Ok(AnchorPoint { x: AnchorAlignment::CENTER, y: AnchorAlignment::CENTER })
+            Ok(AnchorPoint {
+                x: AnchorAlignment::CENTER,
+                y: AnchorAlignment::CENTER,
+            })
         } else {
-            let (first, second) = s.split_once(' ').ok_or_else(|| AnchorPointParseError::WrongFormat(s.to_string()))?;
+            let (first, second) = s
+                .split_once(' ')
+                .ok_or_else(|| AnchorPointParseError::WrongFormat(s.to_string()))?;
             let x_y_result: Result<_, EnumParseError> = (move || {
-                Ok(AnchorPoint { x: AnchorAlignment::from_x_alignment(first)?, y: AnchorAlignment::from_y_alignment(second)? })
+                Ok(AnchorPoint {
+                    x: AnchorAlignment::from_x_alignment(first)?,
+                    y: AnchorAlignment::from_y_alignment(second)?,
+                })
             })();
             x_y_result.or_else(|_| {
-                Ok(AnchorPoint { x: AnchorAlignment::from_x_alignment(second)?, y: AnchorAlignment::from_y_alignment(first)? })
+                Ok(AnchorPoint {
+                    x: AnchorAlignment::from_x_alignment(second)?,
+                    y: AnchorAlignment::from_y_alignment(first)?,
+                })
             })
         }
     }
@@ -156,21 +177,36 @@ pub struct WindowGeometryDef {
 impl FromAstElementContent for WindowGeometryDef {
     const ELEMENT_NAME: &'static str = "geometry";
 
-    fn from_tail<I: Iterator<Item = Ast>>(_span: Span, mut iter: AstIterator<I>) -> DiagResult<Self> {
+    fn from_tail<I: Iterator<Item = Ast>>(
+        _span: Span,
+        mut iter: AstIterator<I>,
+    ) -> DiagResult<Self> {
         let mut attrs = iter.expect_key_values()?;
-        iter.expect_done()
-            .map_err(|e| e.to_diagnostic().with_notes(vec!["Check if you are missing a colon in front of a key".to_string()]))?;
+        iter.expect_done().map_err(|e| {
+            e.to_diagnostic().with_notes(vec![
+                "Check if you are missing a colon in front of a key".to_string()
+            ])
+        })?;
 
         Ok(WindowGeometryDef {
             anchor_point: attrs.ast_optional("anchor")?,
-            size: CoordsDef { x: attrs.ast_optional("width")?, y: attrs.ast_optional("height")? },
-            offset: CoordsDef { x: attrs.ast_optional("x")?, y: attrs.ast_optional("y")? },
+            size: CoordsDef {
+                x: attrs.ast_optional("width")?,
+                y: attrs.ast_optional("height")?,
+            },
+            offset: CoordsDef {
+                x: attrs.ast_optional("x")?,
+                y: attrs.ast_optional("y")?,
+            },
         })
     }
 }
 
 impl WindowGeometryDef {
-    pub fn eval(&self, local_variables: &HashMap<VarName, DynVal>) -> Result<WindowGeometry, Error> {
+    pub fn eval(
+        &self,
+        local_variables: &HashMap<VarName, DynVal>,
+    ) -> Result<WindowGeometry, Error> {
         Ok(WindowGeometry {
             anchor_point: match &self.anchor_point {
                 Some(expr) => AnchorPoint::from_dynval(&expr.eval(local_variables)?)?,
@@ -190,7 +226,12 @@ pub struct WindowGeometry {
 }
 
 impl WindowGeometry {
-    pub fn override_if_given(&self, anchor_point: Option<AnchorPoint>, offset: Option<Coords>, size: Option<Coords>) -> Self {
+    pub fn override_if_given(
+        &self,
+        anchor_point: Option<AnchorPoint>,
+        offset: Option<Coords>,
+        size: Option<Coords>,
+    ) -> Self {
         WindowGeometry {
             anchor_point: anchor_point.unwrap_or(self.anchor_point),
             offset: offset.unwrap_or(self.offset),

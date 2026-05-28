@@ -88,7 +88,9 @@ impl ToDiagnostic for Diagnostic<usize> {
 impl ToDiagnostic for parse_error::ParseError {
     fn to_diagnostic(&self) -> Diagnostic<usize> {
         match self {
-            parse_error::ParseError::SimplExpr(source) => lalrpop_error_to_diagnostic(&source.source, source.file_id),
+            parse_error::ParseError::SimplExpr(source) => {
+                lalrpop_error_to_diagnostic(&source.source, source.file_id)
+            }
             parse_error::ParseError::LexicalError(span) => generate_lexical_error_diagnostic(*span),
         }
     }
@@ -109,20 +111,34 @@ impl ToDiagnostic for AttrError {
 impl ToDiagnostic for ValidationError {
     fn to_diagnostic(&self) -> Diagnostic<usize> {
         match self {
-            ValidationError::MissingAttr { widget_name, arg_name, arg_list_span, use_span } => {
+            ValidationError::MissingAttr {
+                widget_name,
+                arg_name,
+                arg_list_span,
+                use_span,
+            } => {
                 let mut diag = Diagnostic::error()
                     .with_message(self.to_string())
-                    .with_label(span_to_secondary_label(*use_span).with_message("Argument missing here"))
+                    .with_label(
+                        span_to_secondary_label(*use_span).with_message("Argument missing here"),
+                    )
                     .with_notes(vec![format!(
                         "Hint: pass the attribute like so: `({} :{} your-value ...`",
                         widget_name, arg_name
                     )]);
                 if let Some(arg_list_span) = arg_list_span {
-                    diag = diag.with_label(span_to_secondary_label(*arg_list_span).with_message("But is required here"));
+                    diag = diag.with_label(
+                        span_to_secondary_label(*arg_list_span)
+                            .with_message("But is required here"),
+                    );
                 }
                 diag
             }
-            ValidationError::UnknownVariable { span, name, in_definition } => {
+            ValidationError::UnknownVariable {
+                span,
+                name,
+                in_definition,
+            } => {
                 let diag = gen_diagnostic! {
                     msg = self,
                     label = span => "Used here",
@@ -152,8 +168,10 @@ impl ToDiagnostic for ValidationError {
 }
 
 fn variable_deprecation_note(var_name: String) -> Option<String> {
-    (var_name == "EWW_CPU_USAGE")
-        .then(|| "Note: EWW_CPU_USAGE has recently been removed, and has now been renamed to EWW_CPU".to_string())
+    (var_name == "EWW_CPU_USAGE").then(|| {
+        "Note: EWW_CPU_USAGE has recently been removed, and has now been renamed to EWW_CPU"
+            .to_string()
+    })
 }
 
 pub fn lalrpop_error_to_diagnostic<T: std::fmt::Display, E: Spanned + ToDiagnostic>(
@@ -162,8 +180,13 @@ pub fn lalrpop_error_to_diagnostic<T: std::fmt::Display, E: Spanned + ToDiagnost
 ) -> Diagnostic<usize> {
     use lalrpop_util::ParseError::*;
     match error {
-        InvalidToken { location } => gen_diagnostic!("Invalid token", Span::point(*location, file_id)),
-        UnrecognizedEof { location, expected: _ } => gen_diagnostic! {
+        InvalidToken { location } => {
+            gen_diagnostic!("Invalid token", Span::point(*location, file_id))
+        }
+        UnrecognizedEof {
+            location,
+            expected: _,
+        } => gen_diagnostic! {
             msg = "Input ended unexpectedly. Check if you have any unclosed delimiters",
             label = Span::point(*location, file_id),
         },
@@ -192,7 +215,10 @@ impl ToDiagnostic for simplexpr::eval::EvalError {
                 if similar.len() == 1 {
                     notes.push(format!("Did you mean `{}`?", similar.first().unwrap()))
                 } else if similar.len() > 1 {
-                    notes.push(format!("Did you mean one of: {}?", similar.iter().map(|x| format!("`{}`", x)).join(", ")))
+                    notes.push(format!(
+                        "Did you mean one of: {}?",
+                        similar.iter().map(|x| format!("`{}`", x)).join(", ")
+                    ))
                 }
                 // TODO the note here is confusing when it's an unknown variable being used _within_ a string literal / simplexpr
                 // it only really makes sense on top-level symbols
@@ -203,14 +229,18 @@ impl ToDiagnostic for simplexpr::eval::EvalError {
                 #[cfg(feature = "jq")]
                 if let EvalError::JaqParseError(err) = err.as_ref() {
                     if let Some(ref err) = err.as_ref().0 {
-                        let span = span.new_relative(err.span().start, err.span().end).shifted(1);
+                        let span = span
+                            .new_relative(err.span().start, err.span().end)
+                            .shifted(1);
                         let mut diag = gen_diagnostic!(self, span);
 
                         if let Some(label) = err.label() {
-                            diag = diag.with_label(span_to_secondary_label(span).with_message(label));
+                            diag =
+                                diag.with_label(span_to_secondary_label(span).with_message(label));
                         }
 
-                        let expected: Vec<_> = err.expected().filter_map(|x| x.clone()).sorted().collect();
+                        let expected: Vec<_> =
+                            err.expected().filter_map(|x| x.clone()).sorted().collect();
                         if !expected.is_empty() {
                             let label = format!("Expected one of {} here", expected.join(", "));
                             diag = diag.with_label(span_to_primary_label(span).with_message(label));
@@ -218,7 +248,9 @@ impl ToDiagnostic for simplexpr::eval::EvalError {
                         return diag;
                     }
                 }
-                err.as_ref().to_diagnostic().with_label(span_to_primary_label(*span))
+                err.as_ref()
+                    .to_diagnostic()
+                    .with_label(span_to_primary_label(*span))
             }
             _ => gen_diagnostic!(self, self.span()),
         }
@@ -231,7 +263,12 @@ impl ToDiagnostic for dynval::ConversionError {
             msg = self,
             label = self.value.span() => format!("`{}` is not of type `{}`", self.value, self.target_type),
         };
-        diag.with_notes(self.source.as_ref().map(|x| vec![x.to_string()]).unwrap_or_default())
+        diag.with_notes(
+            self.source
+                .as_ref()
+                .map(|x| vec![x.to_string()])
+                .unwrap_or_default(),
+        )
     }
 }
 

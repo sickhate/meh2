@@ -45,10 +45,18 @@ impl FromStr for NumWithUnit {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        static PATTERN: Lazy<regex::Regex> = Lazy::new(|| regex::Regex::new("^(-?\\d+(?:.\\d+)?)(.*)$").unwrap());
+        static PATTERN: Lazy<regex::Regex> =
+            Lazy::new(|| regex::Regex::new("^(-?\\d+(?:.\\d+)?)(.*)$").unwrap());
 
-        let captures = PATTERN.captures(s).ok_or_else(|| Error::NumParseFailed(s.to_string()))?;
-        let value = captures.get(1).unwrap().as_str().parse::<f32>().map_err(|_| Error::NumParseFailed(s.to_string()))?;
+        let captures = PATTERN
+            .captures(s)
+            .ok_or_else(|| Error::NumParseFailed(s.to_string()))?;
+        let value = captures
+            .get(1)
+            .unwrap()
+            .as_str()
+            .parse::<f32>()
+            .map_err(|_| Error::NumParseFailed(s.to_string()))?;
         match captures.get(2).unwrap().as_str() {
             "px" | "" => Ok(NumWithUnit::Pixels(value.floor() as i32)),
             "%" => Ok(NumWithUnit::Percent(value)),
@@ -83,17 +91,26 @@ impl fmt::Debug for Coords {
 
 impl Coords {
     pub fn from_pixels((x, y): (i32, i32)) -> Self {
-        Coords { x: NumWithUnit::Pixels(x), y: NumWithUnit::Pixels(y) }
+        Coords {
+            x: NumWithUnit::Pixels(x),
+            y: NumWithUnit::Pixels(y),
+        }
     }
 
     /// parse a string for x and a string for y into a [`Coords`] object.
     pub fn from_strs(x: &str, y: &str) -> Result<Coords, Error> {
-        Ok(Coords { x: x.parse()?, y: y.parse()? })
+        Ok(Coords {
+            x: x.parse()?,
+            y: y.parse()?,
+        })
     }
 
     /// resolve the possibly relative coordinates relative to a given containers size
     pub fn relative_to(&self, width: i32, height: i32) -> (i32, i32) {
-        (self.x.pixels_relative_to(width), self.y.pixels_relative_to(height))
+        (
+            self.x.pixels_relative_to(width),
+            self.y.pixels_relative_to(height),
+        )
     }
 }
 
@@ -104,16 +121,34 @@ mod test {
 
     #[test]
     fn test_parse_num_with_unit() {
-        assert_eq!(NumWithUnit::Pixels(55), NumWithUnit::from_str("55").unwrap());
-        assert_eq!(NumWithUnit::Pixels(55), NumWithUnit::from_str("55px").unwrap());
-        assert_eq!(NumWithUnit::Percent(55.0), NumWithUnit::from_str("55%").unwrap());
-        assert_eq!(NumWithUnit::Percent(55.5), NumWithUnit::from_str("55.5%").unwrap());
+        assert_eq!(
+            NumWithUnit::Pixels(55),
+            NumWithUnit::from_str("55").unwrap()
+        );
+        assert_eq!(
+            NumWithUnit::Pixels(55),
+            NumWithUnit::from_str("55px").unwrap()
+        );
+        assert_eq!(
+            NumWithUnit::Percent(55.0),
+            NumWithUnit::from_str("55%").unwrap()
+        );
+        assert_eq!(
+            NumWithUnit::Percent(55.5),
+            NumWithUnit::from_str("55.5%").unwrap()
+        );
         assert!(NumWithUnit::from_str("55pp").is_err());
     }
 
     #[test]
     fn test_parse_coords() {
-        assert_eq!(Coords { x: NumWithUnit::Pixels(50), y: NumWithUnit::Pixels(60) }, Coords::from_str("50x60").unwrap());
+        assert_eq!(
+            Coords {
+                x: NumWithUnit::Pixels(50),
+                y: NumWithUnit::Pixels(60)
+            },
+            Coords::from_str("50x60").unwrap()
+        );
         assert!(Coords::from_str("5060").is_err());
     }
 }

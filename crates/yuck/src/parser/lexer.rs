@@ -76,16 +76,30 @@ pub struct Lexer {
 
 impl Lexer {
     pub fn new(file_id: usize, source: String) -> Self {
-        Lexer { source, file_id, failed: false, pos: 0 }
+        Lexer {
+            source,
+            file_id,
+            failed: false,
+            pos: 0,
+        }
     }
 
     fn string_lit(&mut self) -> Option<Result<(usize, Token, usize), parse_error::ParseError>> {
-        let mut simplexpr_lexer = simplexpr::parser::lexer::Lexer::new(self.file_id, self.pos, &self.source[self.pos..]);
+        let mut simplexpr_lexer =
+            simplexpr::parser::lexer::Lexer::new(self.file_id, self.pos, &self.source[self.pos..]);
         match simplexpr_lexer.string_lit() {
             Some(Ok((lo, segments, hi))) => {
                 self.pos = hi;
                 self.advance_until_char_boundary();
-                Some(Ok((lo, Token::SimplExpr(vec![(lo, simplexpr::parser::lexer::Token::StringLit(segments), hi)]), hi)))
+                Some(Ok((
+                    lo,
+                    Token::SimplExpr(vec![(
+                        lo,
+                        simplexpr::parser::lexer::Token::StringLit(segments),
+                        hi,
+                    )]),
+                    hi,
+                )))
             }
             Some(Err(e)) => Some(Err(parse_error::ParseError::LexicalError(e.0))),
             None => None,
@@ -95,7 +109,8 @@ impl Lexer {
     fn simplexpr(&mut self) -> Option<Result<(usize, Token, usize), parse_error::ParseError>> {
         use simplexpr::parser::lexer as simplexpr_lexer;
         self.pos += 1;
-        let mut simplexpr_lexer = simplexpr_lexer::Lexer::new(self.file_id, self.pos, &self.source[self.pos..]);
+        let mut simplexpr_lexer =
+            simplexpr_lexer::Lexer::new(self.file_id, self.pos, &self.source[self.pos..]);
         let mut toks: Vec<(usize, _, usize)> = Vec::new();
         let mut end;
         let mut curly_nesting = 0;
@@ -157,7 +172,11 @@ impl Iterator for Lexer {
                     Some(x) => x,
                     None => {
                         self.failed = true;
-                        return Some(Err(parse_error::ParseError::LexicalError(Span(self.pos, self.pos, self.file_id))));
+                        return Some(Err(parse_error::ParseError::LexicalError(Span(
+                            self.pos,
+                            self.pos,
+                            self.file_id,
+                        ))));
                     }
                 };
 

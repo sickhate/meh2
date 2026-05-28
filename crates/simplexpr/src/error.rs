@@ -9,19 +9,34 @@ pub struct ParseError {
 }
 
 impl ParseError {
-    pub fn from_parse_error(file_id: usize, err: lalrpop_util::ParseError<usize, lexer::Token, lexer::LexicalError>) -> Self {
-        Self { file_id, source: err }
+    pub fn from_parse_error(
+        file_id: usize,
+        err: lalrpop_util::ParseError<usize, lexer::Token, lexer::LexicalError>,
+    ) -> Self {
+        Self {
+            file_id,
+            source: err,
+        }
     }
 }
 
 impl Spanned for ParseError {
     fn span(&self) -> Span {
         match &self.source {
-            lalrpop_util::ParseError::InvalidToken { location } => Span(*location, *location, self.file_id),
-            lalrpop_util::ParseError::UnrecognizedEof { location, expected: _ } => Span(*location, *location, self.file_id),
-            lalrpop_util::ParseError::UnrecognizedToken { token, expected: _ } => Span(token.0, token.2, self.file_id),
+            lalrpop_util::ParseError::InvalidToken { location } => {
+                Span(*location, *location, self.file_id)
+            }
+            lalrpop_util::ParseError::UnrecognizedEof {
+                location,
+                expected: _,
+            } => Span(*location, *location, self.file_id),
+            lalrpop_util::ParseError::UnrecognizedToken { token, expected: _ } => {
+                Span(token.0, token.2, self.file_id)
+            }
             lalrpop_util::ParseError::ExtraToken { token } => Span(token.0, token.2, self.file_id),
-            lalrpop_util::ParseError::User { error: LexicalError(span) } => *span,
+            lalrpop_util::ParseError::User {
+                error: LexicalError(span),
+            } => *span,
         }
     }
 }

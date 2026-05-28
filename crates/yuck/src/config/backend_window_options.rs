@@ -40,8 +40,14 @@ pub struct BackendWindowOptionsDef {
 }
 
 impl BackendWindowOptionsDef {
-    pub fn eval(&self, local_variables: &HashMap<VarName, DynVal>) -> Result<BackendWindowOptions, Error> {
-        Ok(BackendWindowOptions { wayland: self.wayland.eval(local_variables)?, x11: self.x11.eval(local_variables)? })
+    pub fn eval(
+        &self,
+        local_variables: &HashMap<VarName, DynVal>,
+    ) -> Result<BackendWindowOptions, Error> {
+        Ok(BackendWindowOptions {
+            wayland: self.wayland.eval(local_variables)?,
+            x11: self.x11.eval(local_variables)?,
+        })
     }
 
     pub fn from_attrs(attrs: &mut Attributes) -> DiagResult<Self> {
@@ -89,7 +95,10 @@ pub struct X11BackendWindowOptionsDef {
 }
 
 impl X11BackendWindowOptionsDef {
-    fn eval(&self, local_variables: &HashMap<VarName, DynVal>) -> Result<X11BackendWindowOptions, Error> {
+    fn eval(
+        &self,
+        local_variables: &HashMap<VarName, DynVal>,
+    ) -> Result<X11BackendWindowOptions, Error> {
         Ok(X11BackendWindowOptions {
             sticky: eval_opt_expr_as_bool(&self.sticky, true, local_variables)?,
             struts: match &self.struts {
@@ -125,7 +134,10 @@ pub struct WlBackendWindowOptionsDef {
 }
 
 impl WlBackendWindowOptionsDef {
-    fn eval(&self, local_variables: &HashMap<VarName, DynVal>) -> Result<WlBackendWindowOptions, Error> {
+    fn eval(
+        &self,
+        local_variables: &HashMap<VarName, DynVal>,
+    ) -> Result<WlBackendWindowOptions, Error> {
         Ok(WlBackendWindowOptions {
             exclusive: eval_opt_expr_as_bool(&self.exclusive, false, local_variables)?,
             focusable: match &self.focusable {
@@ -231,7 +243,10 @@ pub struct X11StrutDefinitionExpr {
 }
 
 impl X11StrutDefinitionExpr {
-    fn eval(&self, local_variables: &HashMap<VarName, DynVal>) -> Result<X11StrutDefinition, Error> {
+    fn eval(
+        &self,
+        local_variables: &HashMap<VarName, DynVal>,
+    ) -> Result<X11StrutDefinition, Error> {
         Ok(X11StrutDefinition {
             side: match &self.side {
                 Some(expr) => Side::from_dynval(&expr.eval(local_variables)?)?,
@@ -245,10 +260,18 @@ impl X11StrutDefinitionExpr {
 impl FromAstElementContent for X11StrutDefinitionExpr {
     const ELEMENT_NAME: &'static str = "struts";
 
-    fn from_tail<I: Iterator<Item = Ast>>(_span: Span, mut iter: AstIterator<I>) -> DiagResult<Self> {
+    fn from_tail<I: Iterator<Item = Ast>>(
+        _span: Span,
+        mut iter: AstIterator<I>,
+    ) -> DiagResult<Self> {
         let mut attrs = iter.expect_key_values()?;
-        iter.expect_done().map_err(DiagError::from).note("Check if you are missing a colon in front of a key")?;
-        Ok(X11StrutDefinitionExpr { side: attrs.ast_optional("side")?, distance: attrs.ast_required("distance")? })
+        iter.expect_done()
+            .map_err(DiagError::from)
+            .note("Check if you are missing a colon in front of a key")?;
+        Ok(X11StrutDefinitionExpr {
+            side: attrs.ast_optional("side")?,
+            distance: attrs.ast_required("distance")?,
+        })
     }
 }
 

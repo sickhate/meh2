@@ -1,6 +1,6 @@
 // MIT — ported from elkowar/eww crates/notifier_host/src/item.rs
 // dbusmenu_gtk3 removed (GTK3-only). Context menus deferred to Phase 2.
-use crate::{icon, proxy, IconResult};
+use crate::{IconResult, icon, proxy};
 
 use serde::Deserialize;
 use zbus::fdo::IntrospectableProxy;
@@ -21,10 +21,10 @@ impl std::str::FromStr for Status {
     type Err = ParseStatusError;
     fn from_str(s: &str) -> Result<Self, ParseStatusError> {
         match s {
-            "Passive"        => Ok(Status::Passive),
-            "Active"         => Ok(Status::Active),
+            "Passive" => Ok(Status::Passive),
+            "Active" => Ok(Status::Active),
             "NeedsAttention" => Ok(Status::NeedsAttention),
-            _                => Err(ParseStatusError),
+            _ => Err(ParseStatusError),
         }
     }
 }
@@ -63,7 +63,8 @@ impl Item {
 
     pub async fn status(&self) -> zbus::Result<Status> {
         let s = self.sni.status().await?;
-        s.parse().map_err(|_| zbus::Error::Failure(format!("invalid status {:?}", s)))
+        s.parse()
+            .map_err(|_| zbus::Error::Failure(format!("invalid status {:?}", s)))
     }
 
     /// Resolve icon for this item; `size` is the target pixel size (e.g. 24).
@@ -106,7 +107,11 @@ async fn resolve_pathless_address(
     let node = quick_xml::de::from_str::<DBusNode>(&xml)
         .map_err(|e| zbus::Error::Failure(e.to_string()))?;
 
-    if node.interface.iter().any(|i| i.name == "org.kde.StatusNotifierItem") {
+    if node
+        .interface
+        .iter()
+        .any(|i| i.name == "org.kde.StatusNotifierItem")
+    {
         return Ok(Some(path));
     }
 
@@ -115,7 +120,12 @@ async fn resolve_pathless_address(
             if name == "StatusNotifierItem" {
                 return Ok(Some(join_path(&path, name)));
             }
-            let found = Box::pin(resolve_pathless_address(con, service, join_path(&path, name))).await?;
+            let found = Box::pin(resolve_pathless_address(
+                con,
+                service,
+                join_path(&path, name),
+            ))
+            .await?;
             if found.is_some() {
                 return Ok(found);
             }

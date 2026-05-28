@@ -12,17 +12,14 @@
 //! This module is a no-op when the `rhai-plugins` feature is disabled.
 
 mod manifest;
-pub use manifest::{PluginManifest, VarDecl, VarKind, Permissions};
+pub use manifest::{Permissions, PluginManifest, VarDecl, VarKind};
 
 // ── Stub (rhai-plugins feature disabled) ─────────────────────────────────────
 
 #[cfg(not(feature = "rhai-plugins"))]
 pub fn start_plugins(
     _config_dir: &std::path::Path,
-    _tx: tokio::sync::mpsc::UnboundedSender<(
-        eww_shared_util::VarName,
-        simplexpr::dynval::DynVal,
-    )>,
+    _tx: tokio::sync::mpsc::UnboundedSender<(eww_shared_util::VarName, simplexpr::dynval::DynVal)>,
     _shutdown: tokio::sync::broadcast::Receiver<()>,
     _windows_open: std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) {

@@ -30,7 +30,9 @@ pub struct WidgetDecl {
     pub default_watch: Vec<String>,
 }
 
-fn default_render_fn() -> String { "render".to_string() }
+fn default_render_fn() -> String {
+    "render".to_string()
+}
 
 #[derive(serde::Deserialize, Debug, Clone)]
 pub struct VarDecl {

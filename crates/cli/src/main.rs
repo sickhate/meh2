@@ -8,7 +8,12 @@ use clap::{Parser, Subcommand};
 use meh_core::{IpcCmd, IpcResponse, MehPaths};
 
 #[derive(Parser, Debug)]
-#[command(name = "meh2", version, author, about = "Widget system for Wayland (meh2 fork)")]
+#[command(
+    name = "meh2",
+    version,
+    author,
+    about = "Widget system for Wayland (meh2 fork)"
+)]
 struct Cli {
     /// Override config directory
     #[arg(short, long, global = true)]
@@ -88,17 +93,18 @@ async fn main() -> Result<()> {
 
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(
-                    "meh=info,meh_daemon=info,meh_gtk4=info,meh_script_vars=info,meh_core=info"
-                )),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+                tracing_subscriber::EnvFilter::new(
+                    "meh=info,meh_daemon=info,meh_gtk4=info,meh_script_vars=info,meh_core=info",
+                )
+            }),
         )
         .with_target(false)
         .init();
 
     let paths = match &cli.config {
         Some(dir) => MehPaths::from_config_dir(dir)?,
-        None      => MehPaths::default_paths()?,
+        None => MehPaths::default_paths()?,
     };
 
     match cli.cmd {
@@ -108,9 +114,7 @@ async fn main() -> Result<()> {
 
         Command::Completions { shell } => {
             use clap::CommandFactory;
-            clap_complete::generate(
-                shell, &mut Cli::command(), "meh2", &mut std::io::stdout(),
-            );
+            clap_complete::generate(shell, &mut Cli::command(), "meh2", &mut std::io::stdout());
         }
 
         other => {
@@ -121,7 +125,9 @@ async fn main() -> Result<()> {
 
             match resp {
                 IpcResponse::Ok(msg) => {
-                    if !msg.is_empty() { println!("{}", msg); }
+                    if !msg.is_empty() {
+                        println!("{}", msg);
+                    }
                 }
                 IpcResponse::Err(e) => {
                     eprintln!("meh: {}", e);
@@ -136,23 +142,27 @@ async fn main() -> Result<()> {
 
 fn to_ipc_cmd(cmd: Command) -> IpcCmd {
     match cmd {
-        Command::Open { window, toggle, monitor } =>
-            IpcCmd::Open { window, toggle, monitor },
-        Command::Close { windows } =>
-            IpcCmd::Close { windows },
-        Command::CloseAll =>
-            IpcCmd::CloseAll,
-        Command::Reload =>
-            IpcCmd::Reload,
+        Command::Open {
+            window,
+            toggle,
+            monitor,
+        } => IpcCmd::Open {
+            window,
+            toggle,
+            monitor,
+        },
+        Command::Close { windows } => IpcCmd::Close { windows },
+        Command::CloseAll => IpcCmd::CloseAll,
+        Command::Reload => IpcCmd::Reload,
         Command::Update { vars } => {
             let map: HashMap<String, String> = vars.into_iter().collect();
             IpcCmd::Update { vars: map }
         }
-        Command::State        => IpcCmd::State,
-        Command::Get { var }  => IpcCmd::Get { var },
-        Command::ListWindows  => IpcCmd::ListWindows,
-        Command::Ping         => IpcCmd::Ping,
-        Command::Kill         => IpcCmd::Kill,
+        Command::State => IpcCmd::State,
+        Command::Get { var } => IpcCmd::Get { var },
+        Command::ListWindows => IpcCmd::ListWindows,
+        Command::Ping => IpcCmd::Ping,
+        Command::Kill => IpcCmd::Kill,
         Command::Daemon | Command::Completions { .. } => unreachable!("handled before to_ipc_cmd"),
     }
 }

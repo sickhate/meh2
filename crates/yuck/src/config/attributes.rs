@@ -106,7 +106,9 @@ impl Attributes {
     /// Consumes the attributes to return a list of unused attributes which may be used to emit a warning.
     /// TODO actually use this and emit warnings
     pub fn get_unused(self) -> impl Iterator<Item = (Span, AttrName)> {
-        self.attrs.into_iter().map(|(k, v)| (v.key_span.to(v.value.span()), k))
+        self.attrs
+            .into_iter()
+            .map(|(k, v)| (v.key_span.to(v.value.span()), k))
     }
 }
 
@@ -122,7 +124,15 @@ impl FromAst for AttrSpec {
     fn from_ast(e: Ast) -> DiagResult<Self> {
         let span = e.span();
         let symbol = e.as_symbol()?;
-        let (name, optional) = if let Some(name) = symbol.strip_prefix('?') { (name.to_string(), true) } else { (symbol, false) };
-        Ok(Self { name: AttrName(name), optional, span })
+        let (name, optional) = if let Some(name) = symbol.strip_prefix('?') {
+            (name.to_string(), true)
+        } else {
+            (symbol, false)
+        };
+        Ok(Self {
+            name: AttrName(name),
+            optional,
+            span,
+        })
     }
 }

@@ -16,7 +16,10 @@ impl FromAst for Ast {
 
 impl FromAst for String {
     fn from_ast(e: Ast) -> DiagResult<Self> {
-        Ok(e.as_simplexpr()?.eval_no_vars().map_err(|e| DiagError(e.to_diagnostic()))?.to_string())
+        Ok(e.as_simplexpr()?
+            .eval_no_vars()
+            .map_err(|e| DiagError(e.to_diagnostic()))?
+            .to_string())
     }
 }
 

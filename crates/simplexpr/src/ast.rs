@@ -25,7 +25,9 @@ pub enum BinOp {
     #[strum(serialize = "=~")] RegexMatch,
 }
 
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Debug, strum::EnumString, strum::Display)]
+#[derive(
+    Clone, PartialEq, Eq, Serialize, Deserialize, Debug, strum::EnumString, strum::Display,
+)]
 pub enum UnaryOp {
     #[strum(serialize = "!")]
     Not,
@@ -72,14 +74,25 @@ impl std::fmt::Display for SimplExpr {
             SimplExpr::BinOp(_, l, op, r) => write!(f, "({} {} {})", l, op, r),
             SimplExpr::UnaryOp(_, op, x) => write!(f, "{}{}", op, x),
             SimplExpr::IfElse(_, a, b, c) => write!(f, "({} ? {} : {})", a, b, c),
-            SimplExpr::JsonAccess(_, AccessType::Normal, value, index) => write!(f, "{}[{}]", value, index),
-            SimplExpr::JsonAccess(_, AccessType::Safe, value, index) => write!(f, "{}?.[{}]", value, index),
+            SimplExpr::JsonAccess(_, AccessType::Normal, value, index) => {
+                write!(f, "{}[{}]", value, index)
+            }
+            SimplExpr::JsonAccess(_, AccessType::Safe, value, index) => {
+                write!(f, "{}?.[{}]", value, index)
+            }
             SimplExpr::FunctionCall(_, function_name, args) => {
                 write!(f, "{}({})", function_name, args.iter().join(", "))
             }
             SimplExpr::JsonArray(_, values) => write!(f, "[{}]", values.iter().join(", ")),
             SimplExpr::JsonObject(_, entries) => {
-                write!(f, "{{{}}}", entries.iter().map(|(k, v)| format!("{}: {}", k, v)).join(", "))
+                write!(
+                    f,
+                    "{{{}}}",
+                    entries
+                        .iter()
+                        .map(|(k, v)| format!("{}: {}", k, v))
+                        .join(", ")
+                )
             }
         }
     }
@@ -107,11 +120,19 @@ impl SimplExpr {
         use SimplExpr::*;
         match self {
             Literal(_) => false,
-            Concat(_, x) | FunctionCall(_, _, x) | JsonArray(_, x) => x.iter().any(|x| x.references_var(var)),
-            JsonObject(_, x) => x.iter().any(|(k, v)| k.references_var(var) || v.references_var(var)),
-            JsonAccess(_, _, a, b) | BinOp(_, a, _, b) => a.references_var(var) || b.references_var(var),
+            Concat(_, x) | FunctionCall(_, _, x) | JsonArray(_, x) => {
+                x.iter().any(|x| x.references_var(var))
+            }
+            JsonObject(_, x) => x
+                .iter()
+                .any(|(k, v)| k.references_var(var) || v.references_var(var)),
+            JsonAccess(_, _, a, b) | BinOp(_, a, _, b) => {
+                a.references_var(var) || b.references_var(var)
+            }
             UnaryOp(_, _, x) => x.references_var(var),
-            IfElse(_, a, b, c) => a.references_var(var) || b.references_var(var) || c.references_var(var),
+            IfElse(_, a, b, c) => {
+                a.references_var(var) || b.references_var(var) || c.references_var(var)
+            }
             VarRef(_, x) => x == var,
         }
     }
@@ -130,7 +151,9 @@ impl SimplExpr {
                 b.as_ref().collect_var_refs_into(dest);
                 c.as_ref().collect_var_refs_into(dest);
             }
-            JsonArray(_, xs) | FunctionCall(_, _, xs) | Concat(_, xs) => xs.iter().for_each(|x| x.collect_var_refs_into(dest)),
+            JsonArray(_, xs) | FunctionCall(_, _, xs) | Concat(_, xs) => {
+                xs.iter().for_each(|x| x.collect_var_refs_into(dest))
+            }
             JsonObject(_, entries) => entries.iter().for_each(|(k, v)| {
                 k.collect_var_refs_into(dest);
                 v.collect_var_refs_into(dest);

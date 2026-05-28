@@ -16,7 +16,10 @@ pub trait Host: Send {
 /// you pass to [`run_host`].
 pub async fn register_as_host(
     con: &zbus::Connection,
-) -> zbus::Result<(zbus::names::WellKnownName<'static>, proxy::StatusNotifierWatcherProxy<'static>)> {
+) -> zbus::Result<(
+    zbus::names::WellKnownName<'static>,
+    proxy::StatusNotifierWatcherProxy<'static>,
+)> {
     let snw = proxy::StatusNotifierWatcherProxy::new(con).await?;
 
     let pid = std::process::id();
@@ -25,11 +28,15 @@ pub async fn register_as_host(
         use zbus::fdo::RequestNameReply::*;
         i += 1;
         let wellknown = format!("org.freedesktop.StatusNotifierHost-{}-{}", pid, i);
-        let wellknown: zbus::names::WellKnownName =
-            wellknown.try_into().expect("generated well-known name is invalid");
+        let wellknown: zbus::names::WellKnownName = wellknown
+            .try_into()
+            .expect("generated well-known name is invalid");
 
         let flags = [zbus::fdo::RequestNameFlags::DoNotQueue];
-        match con.request_name_with_flags(&wellknown, flags.into_iter().collect()).await? {
+        match con
+            .request_name_with_flags(&wellknown, flags.into_iter().collect())
+            .await?
+        {
             PrimaryOwner => break wellknown,
             Exists | AlreadyOwner => {}
             InQueue => unreachable!("DoNotQueue was set"),
@@ -43,7 +50,10 @@ pub async fn register_as_host(
 /// Run the host forever, dispatching add/remove callbacks to `host`.
 ///
 /// Returns only on error. Call via `tokio::spawn`.
-pub async fn run_host(host: &mut (dyn Host + Send), snw: &proxy::StatusNotifierWatcherProxy<'static>) -> zbus::Error {
+pub async fn run_host(
+    host: &mut (dyn Host + Send),
+    snw: &proxy::StatusNotifierWatcherProxy<'static>,
+) -> zbus::Error {
     macro_rules! try_ {
         ($e:expr) => {
             match $e {
@@ -58,7 +68,7 @@ pub async fn run_host(host: &mut (dyn Host + Send), snw: &proxy::StatusNotifierW
         GoneItem(proxy::StatusNotifierItemUnregistered),
     }
 
-    let new_items  = try_!(snw.receive_status_notifier_item_registered().await);
+    let new_items = try_!(snw.receive_status_notifier_item_registered().await);
     let gone_items = try_!(snw.receive_status_notifier_item_unregistered().await);
 
     let mut item_names = std::collections::HashSet::new();
@@ -70,7 +80,11 @@ pub async fn run_host(host: &mut (dyn Host + Send), snw: &proxy::StatusNotifierW
                 host.add_item(&svc, item);
             }
             Err(e) => {
-                tracing::warn!("could not create StatusNotifierItem from {:?}: {:?}", svc, e);
+                tracing::warn!(
+                    "could not create StatusNotifierItem from {:?}: {:?}",
+                    svc,
+                    e
+                );
             }
         }
     }
@@ -92,7 +106,11 @@ pub async fn run_host(host: &mut (dyn Host + Send), snw: &proxy::StatusNotifierW
                             host.add_item(svc, item);
                         }
                         Err(e) => {
-                            tracing::warn!("could not create StatusNotifierItem from {:?}: {:?}", svc, e);
+                            tracing::warn!(
+                                "could not create StatusNotifierItem from {:?}: {:?}",
+                                svc,
+                                e
+                            );
                         }
                     }
                 }

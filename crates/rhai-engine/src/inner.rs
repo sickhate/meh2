@@ -8,7 +8,7 @@ use std::{
 
 use anyhow::Result;
 use once_cell::sync::OnceCell;
-use rhai::{Dynamic, Engine, Scope, AST};
+use rhai::{AST, Dynamic, Engine, Scope};
 
 static GLOBAL: OnceCell<Arc<RhaiEngine>> = OnceCell::new();
 
@@ -36,7 +36,7 @@ pub fn init() -> Arc<RhaiEngine> {
 /// share across threads via `Arc`.
 pub struct RhaiEngine {
     engine: Engine,
-    cache:  Mutex<HashMap<PathBuf, AST>>,
+    cache: Mutex<HashMap<PathBuf, AST>>,
 }
 
 // Safety: `Engine` is Send+Sync when compiled with the `sync` feature (which
@@ -54,7 +54,7 @@ impl RhaiEngine {
         engine.set_module_resolver(rhai::module_resolvers::DummyModuleResolver::new());
 
         // Resource limits to prevent runaway scripts.
-        engine.set_max_operations(500_000);  // ~500ms on modern hardware
+        engine.set_max_operations(500_000); // ~500ms on modern hardware
         engine.set_max_call_levels(32);
         engine.set_max_string_size(1024 * 1024);
         engine.set_max_array_size(10_000);
@@ -110,7 +110,11 @@ impl RhaiEngine {
             let content = std::fs::read_to_string(path)
                 .map(|s| s.trim_end().to_string())
                 .unwrap_or_default();
-            if content.is_empty() { default.to_string() } else { content }
+            if content.is_empty() {
+                default.to_string()
+            } else {
+                content
+            }
         });
 
         // json_decode(json_str) → Dynamic — parse a JSON string into a Rhai value.
@@ -120,7 +124,7 @@ impl RhaiEngine {
         engine.register_fn("json_decode", |json: &str| -> rhai::Dynamic {
             match serde_json::from_str::<serde_json::Value>(json) {
                 Ok(val) => serde_json_to_rhai(&val),
-                Err(e)  => {
+                Err(e) => {
                     tracing::warn!("rhai json_decode: {e}");
                     rhai::Dynamic::from_map(rhai::Map::new())
                 }
@@ -133,15 +137,21 @@ impl RhaiEngine {
         engine.register_fn("json_encode", |val: rhai::Dynamic| -> String {
             let json_val = rhai_dynamic_to_json(&val);
             match serde_json::to_string(&json_val) {
-                Ok(s)  => s,
-                Err(e) => { tracing::warn!("rhai json_encode: {e}"); "{}".to_string() }
+                Ok(s) => s,
+                Err(e) => {
+                    tracing::warn!("rhai json_encode: {e}");
+                    "{}".to_string()
+                }
             }
         });
 
         // read_cache(key) → string — reads from ~/.cache/meh2/<key>. Symmetric with write_cache.
         // Returns "" if the key doesn't exist or HOME is unset.
         engine.register_fn("read_cache", |key: &str| -> String {
-            if !key.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-') {
+            if !key
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+            {
                 tracing::warn!("rhai read_cache: invalid key {:?}", key);
                 return String::new();
             }
@@ -152,7 +162,10 @@ impl RhaiEngine {
             match std::fs::read_to_string(&path) {
                 Ok(s) => s.trim_end().to_string(),
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
-                Err(e) => { tracing::warn!("rhai read_cache({key}): {e}"); String::new() }
+                Err(e) => {
+                    tracing::warn!("rhai read_cache({key}): {e}");
+                    String::new()
+                }
             }
         });
 
@@ -160,13 +173,22 @@ impl RhaiEngine {
         // Key is restricted to [a-zA-Z0-9_-] to prevent path traversal.
         // Returns true on success, false on error (error is logged).
         engine.register_fn("write_cache", |key: &str, value: &str| -> bool {
-            if !key.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-') {
-                tracing::warn!("rhai write_cache: invalid key {:?}, must match [a-zA-Z0-9_-]", key);
+            if !key
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+            {
+                tracing::warn!(
+                    "rhai write_cache: invalid key {:?}, must match [a-zA-Z0-9_-]",
+                    key
+                );
                 return false;
             }
             let dir = match std::env::var("HOME") {
                 Ok(h) => std::path::PathBuf::from(h).join(".cache/meh2"),
-                Err(_) => { tracing::warn!("rhai write_cache: HOME not set"); return false; }
+                Err(_) => {
+                    tracing::warn!("rhai write_cache: HOME not set");
+                    return false;
+                }
             };
             if let Err(e) = std::fs::create_dir_all(&dir) {
                 tracing::warn!("rhai write_cache: mkdir {}: {}", dir.display(), e);
@@ -174,7 +196,10 @@ impl RhaiEngine {
             }
             match std::fs::write(dir.join(key), value) {
                 Ok(()) => true,
-                Err(e) => { tracing::warn!("rhai write_cache({key}): {e}"); false }
+                Err(e) => {
+                    tracing::warn!("rhai write_cache({key}): {e}");
+                    false
+                }
             }
         });
 
@@ -200,7 +225,8 @@ impl RhaiEngine {
         let ast = self.get_or_compile(&abs)?;
         let mut scope = Scope::new();
 
-        let result: Dynamic = self.engine
+        let result: Dynamic = self
+            .engine
             .eval_ast_with_scope(&mut scope, &ast)
             .map_err(|e| anyhow::anyhow!("rhai `{}`: {}", abs.display(), e))?;
 
@@ -210,7 +236,8 @@ impl RhaiEngine {
     /// Execute an inline Rhai snippet and return the final value as a string.
     pub fn eval_inline(&self, script: &str) -> Result<String> {
         let mut scope = Scope::new();
-        let result: Dynamic = self.engine
+        let result: Dynamic = self
+            .engine
             .eval_with_scope(&mut scope, script)
             .map_err(|e| anyhow::anyhow!("rhai inline: {}", e))?;
         Ok(dynamic_to_string(result))
@@ -229,7 +256,8 @@ impl RhaiEngine {
         let ast = self.get_or_compile(&abs)?;
         let mut scope = Scope::new();
 
-        let result: Dynamic = self.engine
+        let result: Dynamic = self
+            .engine
             .call_fn::<Dynamic>(&mut scope, &ast, fn_name, ())
             .map_err(|e| anyhow::anyhow!("rhai `{}::{}`: {}", abs.display(), fn_name, e))?;
 
@@ -264,7 +292,8 @@ impl RhaiEngine {
             scope.push(k.clone(), rhai::Dynamic::from(v.clone()));
         }
 
-        let result: Dynamic = self.engine
+        let result: Dynamic = self
+            .engine
             .call_fn::<Dynamic>(&mut scope, &ast, fn_name, ())
             .map_err(|e| anyhow::anyhow!("rhai `{}::{}`: {}", abs.display(), fn_name, e))?;
 
@@ -293,18 +322,23 @@ impl RhaiEngine {
 
     fn get_or_compile(&self, path: &PathBuf) -> Result<AST> {
         {
-            let cache = self.cache.lock()
+            let cache = self
+                .cache
+                .lock()
                 .map_err(|_| anyhow::anyhow!("rhai cache mutex poisoned"))?;
             if let Some(ast) = cache.get(path) {
                 return Ok(ast.clone());
             }
         }
 
-        let ast = self.engine
+        let ast = self
+            .engine
             .compile_file(path.clone())
             .map_err(|e| anyhow::anyhow!("rhai compile `{}`: {}", path.display(), e))?;
 
-        let mut cache = self.cache.lock()
+        let mut cache = self
+            .cache
+            .lock()
             .map_err(|_| anyhow::anyhow!("rhai cache mutex poisoned"))?;
         cache.insert(path.clone(), ast.clone());
         Ok(ast)
@@ -349,28 +383,38 @@ fn dynamic_to_widget_data(d: Dynamic) -> std::result::Result<crate::RhaiWidgetDa
     let mut attrs = Vec::new();
     for (key, val) in &map {
         let k = key.as_str();
-        if k == "type" || k == "children" { continue; }
+        if k == "type" || k == "children" {
+            continue;
+        }
         let v = match val.type_name() {
             "string" => val.clone().cast::<String>(),
-            "i64"    => val.clone().cast::<i64>().to_string(),
-            "f64"    => {
+            "i64" => val.clone().cast::<i64>().to_string(),
+            "f64" => {
                 let f = val.clone().cast::<f64>();
-                if f.fract() == 0.0 { format!("{}", f as i64) } else { format!("{f:.2}") }
+                if f.fract() == 0.0 {
+                    format!("{}", f as i64)
+                } else {
+                    format!("{f:.2}")
+                }
             }
-            "bool"   => val.clone().cast::<bool>().to_string(),
-            _        => val.to_string(),
+            "bool" => val.clone().cast::<bool>().to_string(),
+            _ => val.to_string(),
         };
         attrs.push((k.to_string(), v));
     }
 
-    Ok(crate::RhaiWidgetData { widget_type, attrs, children })
+    Ok(crate::RhaiWidgetData {
+        widget_type,
+        attrs,
+        children,
+    })
 }
 
 fn dynamic_to_string(v: Dynamic) -> String {
     match v.type_name() {
-        "string"  => v.cast::<String>(),
-        "i64"     => v.cast::<i64>().to_string(),
-        "f64"     => {
+        "string" => v.cast::<String>(),
+        "i64" => v.cast::<i64>().to_string(),
+        "f64" => {
             let f = v.cast::<f64>();
             // Trim unnecessary decimal places (e.g. "42.0" → "42")
             if f.fract() == 0.0 && f.abs() < 1e15 {
@@ -379,9 +423,9 @@ fn dynamic_to_string(v: Dynamic) -> String {
                 format!("{:.2}", f)
             }
         }
-        "bool"    => v.cast::<bool>().to_string(),
-        "()"      => String::new(),
-        _         => v.to_string(),
+        "bool" => v.cast::<bool>().to_string(),
+        "()" => String::new(),
+        _ => v.to_string(),
     }
 }
 
@@ -410,8 +454,8 @@ fn serde_json_to_rhai(val: &serde_json::Value) -> rhai::Dynamic {
                 rhai::Dynamic::from(n.to_string())
             }
         }
-        Value::Bool(b)  => rhai::Dynamic::from(*b),
-        Value::Null     => rhai::Dynamic::UNIT,
+        Value::Bool(b) => rhai::Dynamic::from(*b),
+        Value::Null => rhai::Dynamic::UNIT,
     }
 }
 

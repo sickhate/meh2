@@ -7,10 +7,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use eww_shared_util::{AttrName, Span, VarName};
 use serde::{Deserialize, Serialize};
-use simplexpr::{dynval::DynVal, SimplExpr};
+use simplexpr::{SimplExpr, dynval::DynVal};
 use yuck::{
     config::{
         attributes::Attributes,
@@ -28,9 +28,9 @@ use yuck::{
 pub struct MehPaths {
     pub config_dir: PathBuf,
     pub socket_file: PathBuf,
-    pub pid_file:   PathBuf,
-    pub log_dir:    PathBuf,
-    pub cache_dir:  PathBuf,
+    pub pid_file: PathBuf,
+    pub log_dir: PathBuf,
+    pub cache_dir: PathBuf,
 }
 
 impl MehPaths {
@@ -52,21 +52,27 @@ impl MehPaths {
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from("/tmp"));
         let socket_file = runtime_dir.join(format!("meh2-server_{}", id));
-        let pid_file    = runtime_dir.join(format!("meh2-daemon_{}.pid", id));
+        let pid_file = runtime_dir.join(format!("meh2-daemon_{}.pid", id));
 
         let cache_base = std::env::var("XDG_CACHE_HOME")
             .map(PathBuf::from)
             .unwrap_or_else(|_| {
                 PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".cache")
             });
-        let log_dir   = cache_base.join("meh2");
+        let log_dir = cache_base.join("meh2");
         let cache_dir = cache_base.join("meh2");
 
         if !log_dir.exists() {
             std::fs::create_dir_all(&log_dir)?;
         }
 
-        Ok(Self { config_dir, socket_file, pid_file, log_dir, cache_dir })
+        Ok(Self {
+            config_dir,
+            socket_file,
+            pid_file,
+            log_dir,
+            cache_dir,
+        })
     }
 
     pub fn default_paths() -> Result<Self> {
@@ -84,7 +90,9 @@ impl MehPaths {
     pub fn main_yuck_file(&self) -> PathBuf {
         for name in &["meh2.yuck", "meh.yuck", "eww.yuck"] {
             let p = self.config_dir.join(name);
-            if p.exists() { return p; }
+            if p.exists() {
+                return p;
+            }
         }
         self.config_dir.join("meh.yuck")
     }
@@ -92,7 +100,9 @@ impl MehPaths {
     pub fn scss_file(&self) -> Option<PathBuf> {
         for name in &["meh.scss", "eww.scss", "style.scss"] {
             let p = self.config_dir.join(name);
-            if p.exists() { return Some(p); }
+            if p.exists() {
+                return Some(p);
+            }
         }
         None
     }
@@ -106,15 +116,21 @@ pub struct VarState {
 }
 
 impl VarState {
-    pub fn new() -> Self { Self::default() }
-    pub fn get(&self, name: &VarName) -> Option<&DynVal> { self.vars.get(name) }
-    pub fn set(&mut self, name: VarName, value: DynVal) { self.vars.insert(name, value); }
+    pub fn new() -> Self {
+        Self::default()
+    }
+    pub fn get(&self, name: &VarName) -> Option<&DynVal> {
+        self.vars.get(name)
+    }
+    pub fn set(&mut self, name: VarName, value: DynVal) {
+        self.vars.insert(name, value);
+    }
 }
 
 // ── EvalCtx ───────────────────────────────────────────────────────────────────
 
 pub struct EvalCtx<'a> {
-    pub scope:       HashMap<VarName, DynVal>,
+    pub scope: HashMap<VarName, DynVal>,
     pub global_vars: &'a HashMap<VarName, DynVal>,
     pub widget_defs: &'a HashMap<String, WidgetDefinition>,
 }
@@ -124,7 +140,11 @@ impl<'a> EvalCtx<'a> {
         global_vars: &'a HashMap<VarName, DynVal>,
         widget_defs: &'a HashMap<String, WidgetDefinition>,
     ) -> Self {
-        Self { scope: HashMap::new(), global_vars, widget_defs }
+        Self {
+            scope: HashMap::new(),
+            global_vars,
+            widget_defs,
+        }
     }
 
     pub fn all_vars(&self) -> HashMap<VarName, DynVal> {
@@ -134,13 +154,21 @@ impl<'a> EvalCtx<'a> {
     }
 
     pub fn eval_expr(&self, expr: &SimplExpr) -> Result<DynVal> {
-        expr.eval(&self.all_vars()).map_err(|e| anyhow::anyhow!("{}", e))
+        expr.eval(&self.all_vars())
+            .map_err(|e| anyhow::anyhow!("{}", e))
     }
 
     pub fn eval_attr(&self, attrs: &Attributes, key: &str) -> Option<DynVal> {
-        attrs.attrs.get(&AttrName(key.to_string())).and_then(|entry| {
-            entry.value.as_simplexpr().ok().and_then(|expr| self.eval_expr(&expr).ok())
-        })
+        attrs
+            .attrs
+            .get(&AttrName(key.to_string()))
+            .and_then(|entry| {
+                entry
+                    .value
+                    .as_simplexpr()
+                    .ok()
+                    .and_then(|expr| self.eval_expr(&expr).ok())
+            })
     }
 
     pub fn eval_attr_str(&self, attrs: &Attributes, key: &str) -> Option<String> {
@@ -162,7 +190,11 @@ impl<'a> EvalCtx<'a> {
     pub fn child_scope(&self, extra: HashMap<VarName, DynVal>) -> EvalCtx<'a> {
         let mut scope = self.scope.clone();
         scope.extend(extra);
-        EvalCtx { scope, global_vars: self.global_vars, widget_defs: self.widget_defs }
+        EvalCtx {
+            scope,
+            global_vars: self.global_vars,
+            widget_defs: self.widget_defs,
+        }
     }
 }
 
@@ -170,7 +202,7 @@ impl<'a> EvalCtx<'a> {
 
 #[derive(Debug, Clone)]
 pub struct MehConfig {
-    pub yuck:      Config,
+    pub yuck: Config,
     pub var_state: VarState,
 }
 
@@ -180,8 +212,8 @@ impl Default for MehConfig {
             yuck: Config {
                 widget_definitions: Default::default(),
                 window_definitions: Default::default(),
-                var_definitions:    Default::default(),
-                script_vars:        Default::default(),
+                var_definitions: Default::default(),
+                script_vars: Default::default(),
             },
             var_state: VarState::new(),
         }
@@ -217,13 +249,17 @@ impl MehConfig {
 /// Minimal file provider that resolves includes relative to config_dir.
 struct FileDb {
     config_dir: PathBuf,
-    next_id:    usize,
-    files:      HashMap<usize, (String, String)>,
+    next_id: usize,
+    files: HashMap<usize, (String, String)>,
 }
 
 impl FileDb {
     fn new(config_dir: PathBuf) -> Self {
-        Self { config_dir, next_id: 0, files: HashMap::new() }
+        Self {
+            config_dir,
+            next_id: 0,
+            files: HashMap::new(),
+        }
     }
 
     fn alloc_id(&mut self) -> usize {
@@ -235,14 +271,23 @@ impl FileDb {
 
 impl YuckFileProvider for FileDb {
     fn load_yuck_file(&mut self, path: PathBuf) -> Result<(Span, Vec<Ast>), FilesError> {
-        let abs = if path.is_absolute() { path } else { self.config_dir.join(path) };
+        let abs = if path.is_absolute() {
+            path
+        } else {
+            self.config_dir.join(path)
+        };
         let src = std::fs::read_to_string(&abs)?;
         let file_id = self.alloc_id();
-        self.files.insert(file_id, (abs.display().to_string(), src.clone()));
+        self.files
+            .insert(file_id, (abs.display().to_string(), src.clone()));
         yuck::parser::parse_toplevel(file_id, src).map_err(FilesError::DiagError)
     }
 
-    fn load_yuck_str(&mut self, name: String, content: String) -> Result<(Span, Vec<Ast>), DiagError> {
+    fn load_yuck_str(
+        &mut self,
+        name: String,
+        content: String,
+    ) -> Result<(Span, Vec<Ast>), DiagError> {
         let file_id = self.alloc_id();
         self.files.insert(file_id, (name, content.clone()));
         yuck::parser::parse_toplevel(file_id, content)
@@ -273,13 +318,23 @@ pub fn compile_css(paths: &MehPaths) -> Option<String> {
 #[derive(Debug, Serialize, Deserialize)]
 pub enum IpcCmd {
     Ping,
-    Open    { window: String, toggle: bool, monitor: Option<i32> },
-    Close   { windows: Vec<String> },
+    Open {
+        window: String,
+        toggle: bool,
+        monitor: Option<i32>,
+    },
+    Close {
+        windows: Vec<String>,
+    },
     CloseAll,
     Reload,
-    Update  { vars: HashMap<String, String> },
+    Update {
+        vars: HashMap<String, String>,
+    },
     State,
-    Get     { var: String },
+    Get {
+        var: String,
+    },
     ListWindows,
     Kill,
 }
@@ -291,9 +346,15 @@ pub enum IpcResponse {
 }
 
 impl IpcResponse {
-    pub fn ok(s: impl Into<String>) -> Self  { Self::Ok(s.into()) }
-    pub fn err(s: impl Into<String>) -> Self { Self::Err(s.into()) }
-    pub fn ok_empty() -> Self { Self::Ok(String::new()) }
+    pub fn ok(s: impl Into<String>) -> Self {
+        Self::Ok(s.into())
+    }
+    pub fn err(s: impl Into<String>) -> Self {
+        Self::Err(s.into())
+    }
+    pub fn ok_empty() -> Self {
+        Self::Ok(String::new())
+    }
 }
 
 pub async fn ipc_write<T: Serialize>(
@@ -301,7 +362,7 @@ pub async fn ipc_write<T: Serialize>(
     msg: &T,
 ) -> Result<()> {
     let bytes = bincode::serialize(msg)?;
-    let len   = (bytes.len() as u32).to_be_bytes();
+    let len = (bytes.len() as u32).to_be_bytes();
     stream.write_all(&len).await?;
     stream.write_all(&bytes).await?;
     Ok(())

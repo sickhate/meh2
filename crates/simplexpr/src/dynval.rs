@@ -18,8 +18,16 @@ pub struct ConversionError {
 pub struct DurationParseError;
 
 impl ConversionError {
-    pub fn new(value: DynVal, target_type: &'static str, source: impl std::error::Error + 'static + Sync + Send) -> Self {
-        ConversionError { value, target_type, source: Some(Box::new(source)) }
+    pub fn new(
+        value: DynVal,
+        target_type: &'static str,
+        source: impl std::error::Error + 'static + Sync + Send,
+    ) -> Self {
+        ConversionError {
+            value,
+            target_type,
+            source: Some(Box::new(source)),
+        }
     }
 }
 impl Spanned for ConversionError {
@@ -108,8 +116,15 @@ impl TryFrom<serde_json::Value> for DynVal {
 
 impl From<Vec<DynVal>> for DynVal {
     fn from(v: Vec<DynVal>) -> Self {
-        let span = if let (Some(first), Some(last)) = (v.first(), v.last()) { first.span().to(last.span()) } else { Span::DUMMY };
-        let elements = v.into_iter().map(|x| x.as_string().unwrap()).collect::<Vec<_>>();
+        let span = if let (Some(first), Some(last)) = (v.first(), v.last()) {
+            first.span().to(last.span())
+        } else {
+            Span::DUMMY
+        };
+        let elements = v
+            .into_iter()
+            .map(|x| x.as_string().unwrap())
+            .collect::<Vec<_>>();
         DynVal(serde_json::to_string(&elements).unwrap(), span)
     }
 }
@@ -169,19 +184,27 @@ impl DynVal {
     }
 
     pub fn as_f64(&self) -> Result<f64> {
-        self.0.parse().map_err(|e| ConversionError::new(self.clone(), "f64", e))
+        self.0
+            .parse()
+            .map_err(|e| ConversionError::new(self.clone(), "f64", e))
     }
 
     pub fn as_i32(&self) -> Result<i32> {
-        self.0.parse().map_err(|e| ConversionError::new(self.clone(), "i32", e))
+        self.0
+            .parse()
+            .map_err(|e| ConversionError::new(self.clone(), "i32", e))
     }
 
     pub fn as_i64(&self) -> Result<i64> {
-        self.0.parse().map_err(|e| ConversionError::new(self.clone(), "i64", e))
+        self.0
+            .parse()
+            .map_err(|e| ConversionError::new(self.clone(), "i64", e))
     }
 
     pub fn as_bool(&self) -> Result<bool> {
-        self.0.parse().map_err(|e| ConversionError::new(self.clone(), "bool", e))
+        self.0
+            .parse()
+            .map_err(|e| ConversionError::new(self.clone(), "bool", e))
     }
 
     pub fn as_duration(&self) -> Result<std::time::Duration> {
@@ -189,10 +212,15 @@ impl DynVal {
         let s = &self.0;
         if s.ends_with("ms") {
             Ok(Duration::from_millis(
-                s.trim_end_matches("ms").parse().map_err(|e| ConversionError::new(self.clone(), "integer", e))?,
+                s.trim_end_matches("ms")
+                    .parse()
+                    .map_err(|e| ConversionError::new(self.clone(), "integer", e))?,
             ))
         } else if s.ends_with('s') {
-            let secs = s.trim_end_matches('s').parse::<f64>().map_err(|e| ConversionError::new(self.clone(), "number", e))?;
+            let secs = s
+                .trim_end_matches('s')
+                .parse::<f64>()
+                .map_err(|e| ConversionError::new(self.clone(), "number", e))?;
             Ok(Duration::from_millis(f64::floor(secs * 1000f64) as u64))
         } else if s.ends_with('m') || s.ends_with("min") {
             let minutes = s
@@ -202,12 +230,19 @@ impl DynVal {
                 .map_err(|e| ConversionError::new(self.clone(), "number", e))?;
             Ok(Duration::from_secs(f64::floor(minutes * 60f64) as u64))
         } else if s.ends_with('h') {
-            let hours = s.trim_end_matches('h').parse::<f64>().map_err(|e| ConversionError::new(self.clone(), "number", e))?;
+            let hours = s
+                .trim_end_matches('h')
+                .parse::<f64>()
+                .map_err(|e| ConversionError::new(self.clone(), "number", e))?;
             Ok(Duration::from_secs(f64::floor(hours * 60f64 * 60f64) as u64))
         } else if let Ok(millis) = s.parse() {
             Ok(Duration::from_millis(millis))
         } else {
-            Err(ConversionError { value: self.clone(), target_type: "duration", source: Some(Box::new(DurationParseError)) })
+            Err(ConversionError {
+                value: self.clone(),
+                target_type: "duration",
+                source: Some(Box::new(DurationParseError)),
+            })
         }
     }
 
@@ -218,7 +253,8 @@ impl DynVal {
         } else {
             match self.0.strip_prefix('[').and_then(|x| x.strip_suffix(']')) {
                 Some(content) => {
-                    let mut items: Vec<String> = content.split(',').map(|x: &str| x.to_string()).collect();
+                    let mut items: Vec<String> =
+                        content.split(',').map(|x: &str| x.to_string()).collect();
                     let mut removed = 0;
                     for times_ran in 0..items.len() {
                         // escapes `,` if there's a `\` before em
@@ -232,7 +268,11 @@ impl DynVal {
                     }
                     Ok(items)
                 }
-                None => Err(ConversionError { value: self.clone(), target_type: "vec", source: None }),
+                None => Err(ConversionError {
+                    value: self.clone(),
+                    target_type: "vec",
+                    source: None,
+                }),
             }
         }
     }
@@ -247,7 +287,11 @@ impl DynVal {
             .map_err(|e| ConversionError::new(self.clone(), "json-value", Box::new(e)))?
             .as_array()
             .cloned()
-            .ok_or_else(|| ConversionError { value: self.clone(), target_type: "json-array", source: None })
+            .ok_or_else(|| ConversionError {
+                value: self.clone(),
+                target_type: "json-array",
+                source: None,
+            })
     }
 
     pub fn as_json_object(&self) -> Result<serde_json::Map<String, serde_json::Value>> {
@@ -255,7 +299,11 @@ impl DynVal {
             .map_err(|e| ConversionError::new(self.clone(), "json-value", Box::new(e)))?
             .as_object()
             .cloned()
-            .ok_or_else(|| ConversionError { value: self.clone(), target_type: "json-object", source: None })
+            .ok_or_else(|| ConversionError {
+                value: self.clone(),
+                target_type: "json-object",
+                source: None,
+            })
     }
 }
 

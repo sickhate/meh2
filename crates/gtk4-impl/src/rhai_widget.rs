@@ -11,7 +11,7 @@ use anyhow::Result;
 use eww_shared_util::{AttrName, Span, VarName};
 use gtk4::prelude::*;
 use meh_core::EvalCtx;
-use simplexpr::{dynval::DynVal, SimplExpr};
+use simplexpr::{SimplExpr, dynval::DynVal};
 use yuck::config::{
     attributes::{AttrEntry, Attributes},
     widget_definition::WidgetDefinition,
@@ -19,20 +19,20 @@ use yuck::config::{
 };
 use yuck::parser::ast::Ast;
 
-use crate::{build_widget, AnyBinding, BINDING_COLLECTOR, CONFIG_DIR};
+use crate::{AnyBinding, BINDING_COLLECTOR, CONFIG_DIR, build_widget};
 
 // ── Reactive binding ──────────────────────────────────────────────────────────
 
 pub struct RhaiWidgetBinding {
-    pub(crate) watched_vars:      Vec<VarName>,
+    pub(crate) watched_vars: Vec<VarName>,
     /// Call-site attribute values evaluated at build time; merged with
     /// watched-var values on every rebuild so plugins see both.
-    pub(crate) static_attrs:      HashMap<String, String>,
-    pub(crate) scope:             HashMap<VarName, DynVal>,
-    pub(crate) widget_defs:       HashMap<String, WidgetDefinition>,
-    pub(crate) script_path:       PathBuf,
-    pub(crate) fn_name:           String,
-    pub(crate) container:         gtk4::Box,
+    pub(crate) static_attrs: HashMap<String, String>,
+    pub(crate) scope: HashMap<VarName, DynVal>,
+    pub(crate) widget_defs: HashMap<String, WidgetDefinition>,
+    pub(crate) script_path: PathBuf,
+    pub(crate) fn_name: String,
+    pub(crate) container: gtk4::Box,
     pub(crate) last_watched_vals: HashMap<VarName, String>,
 }
 
@@ -40,7 +40,10 @@ impl RhaiWidgetBinding {
     pub fn update(&mut self, global_vars: &HashMap<VarName, DynVal>) -> bool {
         let mut changed = false;
         for var in &self.watched_vars {
-            let new_val = global_vars.get(var).map(|v| v.0.clone()).unwrap_or_default();
+            let new_val = global_vars
+                .get(var)
+                .map(|v| v.0.clone())
+                .unwrap_or_default();
             let old_val = self.last_watched_vals.get(var).cloned().unwrap_or_default();
             if new_val != old_val {
                 changed = true;
@@ -68,18 +71,29 @@ impl RhaiWidgetBinding {
         // watched vars take precedence so the latest value always wins.
         let mut vars = self.static_attrs.clone();
         for v in &self.watched_vars {
-            let val = global_vars.get(v).map(|dv| dv.0.clone()).unwrap_or_default();
+            let val = global_vars
+                .get(v)
+                .map(|dv| dv.0.clone())
+                .unwrap_or_default();
             vars.insert(v.0.clone(), val);
         }
 
-        let data = match engine.call_fn_as_widget_data(&self.script_path, config_dir, &self.fn_name, &vars) {
-            Ok(d)  => d,
-            Err(e) => { tracing::error!("rhai-widget {}: {}", self.fn_name, e); return; }
+        let data = match engine.call_fn_as_widget_data(
+            &self.script_path,
+            config_dir,
+            &self.fn_name,
+            &vars,
+        ) {
+            Ok(d) => d,
+            Err(e) => {
+                tracing::error!("rhai-widget {}: {}", self.fn_name, e);
+                return;
+            }
         };
 
-        let wu  = rhai_data_to_widget_use(data, Span::DUMMY);
+        let wu = rhai_data_to_widget_use(data, Span::DUMMY);
         let ctx = EvalCtx {
-            scope:       self.scope.clone(),
+            scope: self.scope.clone(),
             global_vars,
             widget_defs: &self.widget_defs,
         };
@@ -109,9 +123,9 @@ pub fn build_rhai_widget(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::Wid
             .unwrap_or_default()
     };
 
-    let src     = get_str("src");
+    let src = get_str("src");
     let fn_name = get_str("fn");
-    let watch   = get_str("watch");
+    let watch = get_str("watch");
 
     if src.is_empty() || fn_name.is_empty() {
         anyhow::bail!("rhai-widget requires :src and :fn attributes");
@@ -141,14 +155,18 @@ pub fn build_rhai_widget(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::Wid
     let initial_vars: std::collections::HashMap<String, String> = watched_vars
         .iter()
         .map(|v| {
-            let val = ctx.global_vars.get(v).map(|dv| dv.0.clone()).unwrap_or_default();
+            let val = ctx
+                .global_vars
+                .get(v)
+                .map(|dv| dv.0.clone())
+                .unwrap_or_default();
             (v.0.clone(), val)
         })
         .collect();
 
-    let data     = engine.call_fn_as_widget_data(&script_path, config_dir, &fn_name, &initial_vars)?;
+    let data = engine.call_fn_as_widget_data(&script_path, config_dir, &fn_name, &initial_vars)?;
     let inner_wu = rhai_data_to_widget_use(data, wu.span);
-    let inner    = build_widget(&inner_wu, ctx)?;
+    let inner = build_widget(&inner_wu, ctx)?;
 
     let container = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
     container.append(&inner);
@@ -157,7 +175,11 @@ pub fn build_rhai_widget(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::Wid
         let last_watched_vals = watched_vars
             .iter()
             .map(|v| {
-                let val = ctx.global_vars.get(v).map(|dv| dv.0.clone()).unwrap_or_default();
+                let val = ctx
+                    .global_vars
+                    .get(v)
+                    .map(|dv| dv.0.clone())
+                    .unwrap_or_default();
                 (v.clone(), val)
             })
             .collect();
@@ -187,7 +209,7 @@ pub fn build_rhai_widget(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::Wid
 /// the current values of all watched vars. On rebuild (watched var change),
 /// static attr values are re-merged so the Rhai function always sees both.
 pub fn build_rhai_defwidget(
-    wu:  &BasicWidgetUse,
+    wu: &BasicWidgetUse,
     def: &meh_rhai_engine::RhaiWidgetDef,
     ctx: &EvalCtx,
 ) -> Result<gtk4::Widget> {
@@ -201,23 +223,37 @@ pub fn build_rhai_defwidget(
     };
 
     // Resolve :watch — call-site overrides the plugin's default_watch.
-    let watch_override = wu.attrs.attrs
+    let watch_override = wu
+        .attrs
+        .attrs
         .get(&AttrName("watch".to_string()))
         .and_then(|e| e.value.as_simplexpr().ok())
         .and_then(|expr| ctx.eval_expr(&expr).ok())
         .map(|v| v.0);
 
     let watched_vars: Vec<VarName> = match &watch_override {
-        Some(s) => s.split_whitespace().filter(|s| !s.is_empty())
-                    .map(|s| VarName(s.to_string())).collect(),
-        None    => def.default_watch.iter().map(|s| VarName(s.clone())).collect(),
+        Some(s) => s
+            .split_whitespace()
+            .filter(|s| !s.is_empty())
+            .map(|s| VarName(s.to_string()))
+            .collect(),
+        None => def
+            .default_watch
+            .iter()
+            .map(|s| VarName(s.clone()))
+            .collect(),
     };
 
     // Evaluate all call-site attrs (excluding meta-attr :watch) as static values.
     let mut static_attrs: HashMap<String, String> = HashMap::new();
     for (attr_name, entry) in &wu.attrs.attrs {
-        if attr_name.0 == "watch" { continue; }
-        let val = entry.value.as_simplexpr().ok()
+        if attr_name.0 == "watch" {
+            continue;
+        }
+        let val = entry
+            .value
+            .as_simplexpr()
+            .ok()
             .and_then(|expr| ctx.eval_expr(&expr).ok())
             .map(|v| v.0)
             .unwrap_or_default();
@@ -227,21 +263,31 @@ pub fn build_rhai_defwidget(
     // Build initial scope: static attrs + current watched-var values.
     let mut scope_vars = static_attrs.clone();
     for var in &watched_vars {
-        let val = ctx.global_vars.get(var).map(|dv| dv.0.clone()).unwrap_or_default();
+        let val = ctx
+            .global_vars
+            .get(var)
+            .map(|dv| dv.0.clone())
+            .unwrap_or_default();
         scope_vars.insert(var.0.clone(), val);
     }
 
-    let data     = engine.call_fn_as_widget_data(&def.script_path, config_dir, &def.fn_name, &scope_vars)?;
+    let data =
+        engine.call_fn_as_widget_data(&def.script_path, config_dir, &def.fn_name, &scope_vars)?;
     let inner_wu = rhai_data_to_widget_use(data, wu.span);
-    let inner    = build_widget(&inner_wu, ctx)?;
+    let inner = build_widget(&inner_wu, ctx)?;
 
     let container = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
     container.append(&inner);
 
     if !watched_vars.is_empty() {
-        let last_watched_vals = watched_vars.iter()
+        let last_watched_vals = watched_vars
+            .iter()
             .map(|v| {
-                let val = ctx.global_vars.get(v).map(|dv| dv.0.clone()).unwrap_or_default();
+                let val = ctx
+                    .global_vars
+                    .get(v)
+                    .map(|dv| dv.0.clone())
+                    .unwrap_or_default();
                 (v.clone(), val)
             })
             .collect();
@@ -254,8 +300,8 @@ pub fn build_rhai_defwidget(
                     scope: ctx.scope.clone(),
                     widget_defs: ctx.widget_defs.clone(),
                     script_path: def.script_path.clone(),
-                    fn_name:     def.fn_name.clone(),
-                    container:   container.clone(),
+                    fn_name: def.fn_name.clone(),
+                    container: container.clone(),
                     last_watched_vals,
                 }));
             }
@@ -272,7 +318,7 @@ pub fn rhai_data_to_widget_use(data: meh_rhai_engine::RhaiWidgetData, span: Span
         .attrs
         .into_iter()
         .map(|(k, v)| {
-            let expr  = SimplExpr::Literal(DynVal::from_string(v));
+            let expr = SimplExpr::Literal(DynVal::from_string(v));
             let entry = AttrEntry::new(span, Ast::SimplExpr(span, expr));
             (AttrName(k), entry)
         })
@@ -285,8 +331,8 @@ pub fn rhai_data_to_widget_use(data: meh_rhai_engine::RhaiWidgetData, span: Span
         .collect();
 
     WidgetUse::Basic(BasicWidgetUse {
-        name:      data.widget_type,
-        attrs:     Attributes::new(span, attrs_map),
+        name: data.widget_type,
+        attrs: Attributes::new(span, attrs_map),
         children,
         span,
         name_span: span,

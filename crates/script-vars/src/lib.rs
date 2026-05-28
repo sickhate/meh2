@@ -4,15 +4,15 @@
 use std::{
     path::PathBuf,
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc,
+        atomic::{AtomicBool, Ordering},
     },
 };
 
 use anyhow::Result;
 use eww_shared_util::VarName;
 use simplexpr::dynval::DynVal;
-use tokio::sync::{mpsc::UnboundedSender, Notify};
+use tokio::sync::{Notify, mpsc::UnboundedSender};
 use yuck::config::script_var_definition::{
     ListenScriptVar, PollScriptVar, ScriptVarDefinition, SubscribeScriptVar, VarSource,
 };
@@ -34,7 +34,10 @@ pub fn start_all(
     window_opened: Arc<Notify>,
     window_closed: Arc<Notify>,
     config_dir: PathBuf,
-) -> (tokio::sync::mpsc::UnboundedReceiver<VarUpdate>, UnboundedSender<VarUpdate>) {
+) -> (
+    tokio::sync::mpsc::UnboundedReceiver<VarUpdate>,
+    UnboundedSender<VarUpdate>,
+) {
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<VarUpdate>();
 
     // Initialise the Rhai engine once here so it is ready before any poll/listen
@@ -290,7 +293,10 @@ fn expand_tilde(path: &str) -> std::path::PathBuf {
 /// - `Parent` — target doesn't exist yet; watching the parent dir for creation
 #[cfg(feature = "inotify-vars")]
 #[derive(Clone, Copy, PartialEq)]
-enum WatchState { File, Parent }
+enum WatchState {
+    File,
+    Parent,
+}
 
 #[cfg(feature = "inotify-vars")]
 async fn run_subscribe_file(
@@ -301,15 +307,20 @@ async fn run_subscribe_file(
     use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
     use yuck::config::script_var_definition::SubscribeSource;
 
-    let SubscribeSource::File { path } = &def.source else { unreachable!() };
+    let SubscribeSource::File { path } = &def.source else {
+        unreachable!()
+    };
     let path = expand_tilde(path);
 
     // Bridge notify's sync callback into an async channel.
-    let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel::<notify::Result<notify::Event>>();
+    let (event_tx, mut event_rx) =
+        tokio::sync::mpsc::unbounded_channel::<notify::Result<notify::Event>>();
     let mut watcher = RecommendedWatcher::new(
         {
             let event_tx = event_tx.clone();
-            move |res| { let _ = event_tx.send(res); }
+            move |res| {
+                let _ = event_tx.send(res);
+            }
         },
         Config::default(),
     )?;
@@ -397,12 +408,14 @@ fn watch_parent_dir(watcher: &mut impl notify::Watcher, path: &std::path::Path) 
 
 #[cfg(feature = "inotify-vars")]
 async fn emit_file_contents(
-    name:  &eww_shared_util::VarName,
-    path:  &std::path::Path,
-    tx:    &UnboundedSender<VarUpdate>,
+    name: &eww_shared_util::VarName,
+    path: &std::path::Path,
+    tx: &UnboundedSender<VarUpdate>,
 ) {
     match tokio::fs::read_to_string(path).await {
-        Ok(s)  => { let _ = tx.send((name.clone(), DynVal::from_string(s.trim_end().to_string()))); }
+        Ok(s) => {
+            let _ = tx.send((name.clone(), DynVal::from_string(s.trim_end().to_string())));
+        }
         Err(e) => tracing::warn!("defsubscribe :file read `{}`: {e}", path.display()),
     }
 }
@@ -419,7 +432,14 @@ async fn run_subscribe_dbus(
     use yuck::config::script_var_definition::{DbusKind, SubscribeSource};
     use zbus::{MatchRule, MessageStream};
 
-    let SubscribeSource::Dbus { bus, service, object, interface, property } = &def.source else {
+    let SubscribeSource::Dbus {
+        bus,
+        service,
+        object,
+        interface,
+        property,
+    } = &def.source
+    else {
         unreachable!()
     };
 
@@ -504,7 +524,13 @@ async fn get_dbus_property(
     property: &str,
 ) -> Result<DynVal> {
     let reply = conn
-        .call_method(Some(service), object, Some("org.freedesktop.DBus.Properties"), "Get", &(interface, property))
+        .call_method(
+            Some(service),
+            object,
+            Some("org.freedesktop.DBus.Properties"),
+            "Get",
+            &(interface, property),
+        )
         .await?;
     let val: zbus::zvariant::OwnedValue = reply.body::<zbus::zvariant::OwnedValue>()?;
     Ok(dynval_from_zvariant(&val))
@@ -541,23 +567,32 @@ fn dynval_from_zvariant(val: &zbus::zvariant::Value<'_>) -> DynVal {
 /// killed with SIGKILL or crashed before it could clean up its children.
 fn kill_orphaned_scripts(config_dir: &std::path::Path) {
     let scripts_dir = config_dir.join("scripts");
-    let needle      = scripts_dir.to_string_lossy().into_owned();
+    let needle = scripts_dir.to_string_lossy().into_owned();
     // inotifywait for /tmp/meh/ triggers (e.g. cal_trigger) don't contain the
     // scripts dir in cmdline, so match on the tmp dir too.
-    let needle2     = "/tmp/meh/".to_string();
+    let needle2 = "/tmp/meh/".to_string();
 
-    let Ok(proc) = std::fs::read_dir("/proc") else { return };
+    let Ok(proc) = std::fs::read_dir("/proc") else {
+        return;
+    };
     for entry in proc.flatten() {
         let name = entry.file_name();
         if !name.to_string_lossy().chars().all(|c| c.is_ascii_digit()) {
             continue;
         }
-        let Ok(pid_n) = name.to_string_lossy().parse::<i32>() else { continue };
+        let Ok(pid_n) = name.to_string_lossy().parse::<i32>() else {
+            continue;
+        };
 
         let cmdline_path = format!("/proc/{}/cmdline", pid_n);
-        let Ok(raw) = std::fs::read(&cmdline_path) else { continue };
+        let Ok(raw) = std::fs::read(&cmdline_path) else {
+            continue;
+        };
         // /proc/<pid>/cmdline is NUL-separated; convert to spaces for matching.
-        let cmdline = raw.iter().map(|&b| if b == 0 { b' ' } else { b }).collect::<Vec<_>>();
+        let cmdline = raw
+            .iter()
+            .map(|&b| if b == 0 { b' ' } else { b })
+            .collect::<Vec<_>>();
         let cmdline = String::from_utf8_lossy(&cmdline);
 
         if cmdline.contains(needle.as_str()) || cmdline.contains(needle2.as_str()) {

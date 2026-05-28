@@ -20,7 +20,7 @@ use std::{collections::HashMap, path::PathBuf};
 pub struct RhaiWidgetData {
     pub widget_type: String,
     /// Attribute key-value pairs (both serialised as strings).
-    pub attrs:    Vec<(String, String)>,
+    pub attrs: Vec<(String, String)>,
     pub children: Vec<RhaiWidgetData>,
 }
 
@@ -29,9 +29,9 @@ pub struct RhaiWidgetData {
 #[derive(Debug, Clone)]
 pub struct RhaiWidgetDef {
     /// Absolute path to the plugin's main.rhai.
-    pub script_path:   PathBuf,
+    pub script_path: PathBuf,
     /// Rhai function to call (e.g. `"render_sysinfo_pill"`).
-    pub fn_name:       String,
+    pub fn_name: String,
     /// Default vars to watch when `:watch` is not specified at the call site.
     pub default_watch: Vec<String>,
 }
@@ -62,7 +62,9 @@ pub fn get_widget_def(name: &str) -> Option<&'static RhaiWidgetDef> {
 pub struct RhaiEngine;
 
 #[cfg(not(feature = "rhai"))]
-pub fn global() -> Option<std::sync::Arc<RhaiEngine>> { None }
+pub fn global() -> Option<std::sync::Arc<RhaiEngine>> {
+    None
+}
 
 #[cfg(not(feature = "rhai"))]
 pub fn init() -> std::sync::Arc<RhaiEngine> {
@@ -71,16 +73,31 @@ pub fn init() -> std::sync::Arc<RhaiEngine> {
 
 #[cfg(not(feature = "rhai"))]
 impl RhaiEngine {
-    pub fn eval_file(&self, _path: &std::path::Path, _config_dir: &std::path::Path) -> anyhow::Result<String> {
+    pub fn eval_file(
+        &self,
+        _path: &std::path::Path,
+        _config_dir: &std::path::Path,
+    ) -> anyhow::Result<String> {
         anyhow::bail!("meh2 built without `rhai` feature")
     }
     pub fn eval_inline(&self, _script: &str) -> anyhow::Result<String> {
         anyhow::bail!("meh2 built without `rhai` feature")
     }
-    pub fn call_fn(&self, _path: &std::path::Path, _config_dir: &std::path::Path, _fn_name: &str) -> anyhow::Result<String> {
+    pub fn call_fn(
+        &self,
+        _path: &std::path::Path,
+        _config_dir: &std::path::Path,
+        _fn_name: &str,
+    ) -> anyhow::Result<String> {
         anyhow::bail!("meh2 built without `rhai` feature")
     }
-    pub fn call_fn_as_widget_data(&self, _path: &std::path::Path, _config_dir: &std::path::Path, _fn_name: &str, _vars: &HashMap<String, String>) -> anyhow::Result<crate::RhaiWidgetData> {
+    pub fn call_fn_as_widget_data(
+        &self,
+        _path: &std::path::Path,
+        _config_dir: &std::path::Path,
+        _fn_name: &str,
+        _vars: &HashMap<String, String>,
+    ) -> anyhow::Result<crate::RhaiWidgetData> {
         anyhow::bail!("meh2 built without `rhai` feature")
     }
     pub fn invalidate(&self, _path: &std::path::Path) {}

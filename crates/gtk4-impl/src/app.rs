@@ -4,8 +4,8 @@
 use std::{
     collections::HashMap,
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc,
+        atomic::{AtomicBool, Ordering},
     },
 };
 
@@ -22,33 +22,57 @@ use crate::window::{self, LiveWindow};
 /// Commands dispatched from the IPC server to the GTK main loop.
 #[derive(Debug)]
 pub enum Cmd {
-    Open    { window: String, toggle: bool, monitor: Option<i32>, resp: tokio::sync::oneshot::Sender<IpcResponse> },
-    Close   { windows: Vec<String>, resp: tokio::sync::oneshot::Sender<IpcResponse> },
-    CloseAll { resp: tokio::sync::oneshot::Sender<IpcResponse> },
-    Reload  { resp: tokio::sync::oneshot::Sender<IpcResponse> },
-    Update  { vars: HashMap<String, String>, resp: tokio::sync::oneshot::Sender<IpcResponse> },
-    State   { resp: tokio::sync::oneshot::Sender<IpcResponse> },
-    Get     { var: String, resp: tokio::sync::oneshot::Sender<IpcResponse> },
-    ListWindows { resp: tokio::sync::oneshot::Sender<IpcResponse> },
+    Open {
+        window: String,
+        toggle: bool,
+        monitor: Option<i32>,
+        resp: tokio::sync::oneshot::Sender<IpcResponse>,
+    },
+    Close {
+        windows: Vec<String>,
+        resp: tokio::sync::oneshot::Sender<IpcResponse>,
+    },
+    CloseAll {
+        resp: tokio::sync::oneshot::Sender<IpcResponse>,
+    },
+    Reload {
+        resp: tokio::sync::oneshot::Sender<IpcResponse>,
+    },
+    Update {
+        vars: HashMap<String, String>,
+        resp: tokio::sync::oneshot::Sender<IpcResponse>,
+    },
+    State {
+        resp: tokio::sync::oneshot::Sender<IpcResponse>,
+    },
+    Get {
+        var: String,
+        resp: tokio::sync::oneshot::Sender<IpcResponse>,
+    },
+    ListWindows {
+        resp: tokio::sync::oneshot::Sender<IpcResponse>,
+    },
     /// Internal: batch script-var updates; no IPC response needed.
-    SetVarBatch { vars: HashMap<VarName, DynVal> },
+    SetVarBatch {
+        vars: HashMap<VarName, DynVal>,
+    },
     /// Internal: GDK monitors list changed; handle connect/disconnect.
     MonitorsChanged,
     Kill,
 }
 
 pub struct App {
-    pub paths:          MehPaths,
-    pub config:         MehConfig,
-    pub open_windows:   HashMap<String, LiveWindow>,
-    pub css_provider:   gtk4::CssProvider,
-    pub main_loop:      gtk4::glib::MainLoop,
+    pub paths: MehPaths,
+    pub config: MehConfig,
+    pub open_windows: HashMap<String, LiveWindow>,
+    pub css_provider: gtk4::CssProvider,
+    pub main_loop: gtk4::glib::MainLoop,
     /// Shared flag: suppresses subprocess execution when no windows are open.
-    pub windows_open:   Arc<AtomicBool>,
+    pub windows_open: Arc<AtomicBool>,
     /// Notified when the first window opens so pending initial var values flush immediately.
-    pub window_opened:  Arc<Notify>,
+    pub window_opened: Arc<Notify>,
     /// Notified when the last window closes so listen subprocesses can be killed.
-    pub window_closed:  Arc<Notify>,
+    pub window_closed: Arc<Notify>,
     /// Windows waiting to be reopened after their monitor reconnects.
     /// Each entry is (window_name, monitor_connector).
     pub pending_reopen: Vec<(String, String)>,
@@ -63,8 +87,18 @@ impl App {
         window_closed: Arc<Notify>,
     ) -> Self {
         let css_provider = gtk4::CssProvider::new();
-        let main_loop    = gtk4::glib::MainLoop::new(None, false);
-        Self { paths, config, open_windows: HashMap::new(), css_provider, main_loop, windows_open, window_opened, window_closed, pending_reopen: Vec::new() }
+        let main_loop = gtk4::glib::MainLoop::new(None, false);
+        Self {
+            paths,
+            config,
+            open_windows: HashMap::new(),
+            css_provider,
+            main_loop,
+            windows_open,
+            window_opened,
+            window_closed,
+            pending_reopen: Vec::new(),
+        }
     }
 
     pub fn apply_css(&self) {
@@ -73,7 +107,9 @@ impl App {
         }
         if let Some(display) = gdk::Display::default() {
             gtk4::style_context_add_provider_for_display(
-                &display, &self.css_provider, gtk4::STYLE_PROVIDER_PRIORITY_USER,
+                &display,
+                &self.css_provider,
+                gtk4::STYLE_PROVIDER_PRIORITY_USER,
             );
         }
     }
@@ -118,9 +154,7 @@ impl App {
 
         let changed: Vec<String> = window_names
             .iter()
-            .filter(|name| {
-                ir_hash(name, &self.config) != ir_hash(name, &new_config)
-            })
+            .filter(|name| ir_hash(name, &self.config) != ir_hash(name, &new_config))
             .cloned()
             .collect();
 
@@ -131,7 +165,11 @@ impl App {
         if changed.is_empty() {
             tracing::debug!("granular reload: CSS updated, no window changes detected");
         } else {
-            tracing::info!("granular reload: rebuilding {} window(s): {:?}", changed.len(), changed);
+            tracing::info!(
+                "granular reload: rebuilding {} window(s): {:?}",
+                changed.len(),
+                changed
+            );
             for name in &changed {
                 self.close_window(name);
             }
@@ -153,13 +191,17 @@ impl App {
             return Ok(());
         }
 
-        let win_def = self.config.yuck.window_definitions.get(name)
+        let win_def = self
+            .config
+            .yuck
+            .window_definitions
+            .get(name)
             .ok_or_else(|| anyhow::anyhow!("No defwindow named `{}`", name))?
             .clone();
 
         let vars = &self.config.var_state.vars;
         let defs = &self.config.yuck.widget_definitions;
-        let ctx  = EvalCtx::new(vars, defs);
+        let ctx = EvalCtx::new(vars, defs);
 
         let was_empty = self.open_windows.is_empty();
         let live = window::build_live_window(&win_def, &ctx, monitor)?;
@@ -185,7 +227,9 @@ impl App {
 
     pub fn close_all(&mut self) {
         let names: Vec<String> = self.open_windows.keys().cloned().collect();
-        for name in names { self.close_window(&name); }
+        for name in names {
+            self.close_window(&name);
+        }
         self.pending_reopen.clear();
     }
 
@@ -194,58 +238,78 @@ impl App {
     /// Closes any window whose assigned monitor is no longer present and queues
     /// it for reopening. Reopens any queued window whose monitor just came back.
     pub fn handle_monitors_changed(&mut self) {
-        let current: std::collections::HashSet<String> =
-            gtk4::gdk::Display::default().map(|d| {
+        let current: std::collections::HashSet<String> = gtk4::gdk::Display::default()
+            .map(|d| {
                 let list = d.monitors();
                 (0..list.n_items())
                     .filter_map(|i| list.item(i)?.downcast::<gtk4::gdk::Monitor>().ok())
                     .filter_map(|m| m.connector().map(|c| c.to_string()))
                     .collect()
-            }).unwrap_or_default();
+            })
+            .unwrap_or_default();
 
         // Close windows whose monitor disappeared.
-        let lost: Vec<(String, String)> = self.open_windows.iter()
+        let lost: Vec<(String, String)> = self
+            .open_windows
+            .iter()
             .filter_map(|(name, live)| {
-                live.monitor_connector.as_ref()
+                live.monitor_connector
+                    .as_ref()
                     .filter(|c| !current.contains(*c))
                     .map(|c| (name.clone(), c.clone()))
             })
             .collect();
 
         for (name, connector) in lost {
-            tracing::info!("monitor `{}` disconnected — closing window `{}`", connector, name);
+            tracing::info!(
+                "monitor `{}` disconnected — closing window `{}`",
+                connector,
+                name
+            );
             self.close_window(&name);
             self.pending_reopen.push((name, connector));
         }
 
         // Reopen windows whose monitor came back.
-        let to_reopen: Vec<(String, String)> = self.pending_reopen.iter()
+        let to_reopen: Vec<(String, String)> = self
+            .pending_reopen
+            .iter()
             .filter(|(_, connector)| current.contains(connector))
             .cloned()
             .collect();
 
         for (name, connector) in &to_reopen {
             // Find the current numeric index for this connector.
-            let idx = gtk4::gdk::Display::default().and_then(|d| {
-                let list = d.monitors();
-                (0..list.n_items()).find(|&i| {
-                    list.item(i)
-                        .and_then(|o| o.downcast::<gtk4::gdk::Monitor>().ok())
-                        .and_then(|m| m.connector())
-                        .map(|c| c.as_str() == connector.as_str())
-                        .unwrap_or(false)
+            let idx = gtk4::gdk::Display::default()
+                .and_then(|d| {
+                    let list = d.monitors();
+                    (0..list.n_items()).find(|&i| {
+                        list.item(i)
+                            .and_then(|o| o.downcast::<gtk4::gdk::Monitor>().ok())
+                            .and_then(|m| m.connector())
+                            .map(|c| c.as_str() == connector.as_str())
+                            .unwrap_or(false)
+                    })
                 })
-            }).map(|i| i as i32);
+                .map(|i| i as i32);
 
-            tracing::info!("monitor `{}` reconnected — reopening window `{}`", connector, name);
+            tracing::info!(
+                "monitor `{}` reconnected — reopening window `{}`",
+                connector,
+                name
+            );
             if let Err(e) = self.open_window(name, false, idx) {
-                tracing::warn!("failed to reopen window `{}` on monitor `{}`: {}", name, connector, e);
+                tracing::warn!(
+                    "failed to reopen window `{}` on monitor `{}`: {}",
+                    name,
+                    connector,
+                    e
+                );
             }
         }
 
-        self.pending_reopen.retain(|(name, _)| {
-            !to_reopen.iter().any(|(n, _)| n == name)
-        });
+        self.pending_reopen
+            .retain(|(name, _)| !to_reopen.iter().any(|(n, _)| n == name));
     }
 
     /// Reactive update: re-evaluate only bindings whose expressions changed.
@@ -274,23 +338,33 @@ impl App {
 
     pub fn update_vars(&mut self, vars: &HashMap<String, String>) {
         for (k, v) in vars {
-            self.config.var_state.set(VarName(k.clone()), DynVal::from_string(v.clone()));
+            self.config
+                .var_state
+                .set(VarName(k.clone()), DynVal::from_string(v.clone()));
         }
         self.update_bindings();
     }
 
     pub fn handle_cmd(&mut self, cmd: Cmd) {
         match cmd {
-            Cmd::Open { window, toggle, monitor, resp } => {
+            Cmd::Open {
+                window,
+                toggle,
+                monitor,
+                resp,
+            } => {
                 tracing::info!("handle_cmd: Open {}", window);
-                let r = self.open_window(&window, toggle, monitor)
+                let r = self
+                    .open_window(&window, toggle, monitor)
                     .map(|_| IpcResponse::ok_empty())
                     .unwrap_or_else(|e| IpcResponse::err(e.to_string()));
                 tracing::info!("handle_cmd: Open {} done: {:?}", window, r);
                 let _ = resp.send(r);
             }
             Cmd::Close { windows, resp } => {
-                for w in &windows { self.close_window(w); }
+                for w in &windows {
+                    self.close_window(w);
+                }
                 let _ = resp.send(IpcResponse::ok_empty());
             }
             Cmd::CloseAll { resp } => {
@@ -298,7 +372,8 @@ impl App {
                 let _ = resp.send(IpcResponse::ok_empty());
             }
             Cmd::Reload { resp } => {
-                let r = self.reload_config()
+                let r = self
+                    .reload_config()
                     .map(|_| IpcResponse::ok("Reloaded."))
                     .unwrap_or_else(|e| IpcResponse::err(e.to_string()));
                 let _ = resp.send(r);
@@ -308,20 +383,31 @@ impl App {
                 let _ = resp.send(IpcResponse::ok_empty());
             }
             Cmd::State { resp } => {
-                let state = self.config.var_state.vars.iter()
+                let state = self
+                    .config
+                    .var_state
+                    .vars
+                    .iter()
                     .map(|(k, v)| format!("{} = {:?}", k, v.0))
                     .collect::<Vec<_>>()
                     .join("\n");
                 let _ = resp.send(IpcResponse::ok(state));
             }
-            Cmd::Get { var, resp } => {
-                match self.config.var_state.vars.get(&VarName(var.clone())) {
-                    Some(v) => { let _ = resp.send(IpcResponse::ok(v.0.clone())); }
-                    None    => { let _ = resp.send(IpcResponse::err(format!("variable '{}' not found", var))); }
+            Cmd::Get { var, resp } => match self.config.var_state.vars.get(&VarName(var.clone())) {
+                Some(v) => {
+                    let _ = resp.send(IpcResponse::ok(v.0.clone()));
                 }
-            }
+                None => {
+                    let _ = resp.send(IpcResponse::err(format!("variable '{}' not found", var)));
+                }
+            },
             Cmd::ListWindows { resp } => {
-                let names = self.open_windows.keys().cloned().collect::<Vec<_>>().join("\n");
+                let names = self
+                    .open_windows
+                    .keys()
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join("\n");
                 let _ = resp.send(IpcResponse::ok(names));
             }
             Cmd::SetVarBatch { vars } => {
@@ -366,15 +452,12 @@ pub fn init_platform() -> Option<bool> {
 #[cfg(feature = "animations")]
 pub fn connect_color_scheme(cmd_tx: tokio::sync::mpsc::UnboundedSender<Cmd>) {
     use gtk4::glib::prelude::ObjectExt;
-    libadwaita::StyleManager::default().connect_notify_local(
-        Some("dark"),
-        move |mgr, _| {
-            let val = DynVal::from_string(if mgr.is_dark() { "true" } else { "false" }.to_string());
-            let mut map = HashMap::new();
-            map.insert(VarName("MEH_DARK".to_string()), val);
-            let _ = cmd_tx.send(Cmd::SetVarBatch { vars: map });
-        },
-    );
+    libadwaita::StyleManager::default().connect_notify_local(Some("dark"), move |mgr, _| {
+        let val = DynVal::from_string(if mgr.is_dark() { "true" } else { "false" }.to_string());
+        let mut map = HashMap::new();
+        map.insert(VarName("MEH_DARK".to_string()), val);
+        let _ = cmd_tx.send(Cmd::SetVarBatch { vars: map });
+    });
 }
 
 #[cfg(not(feature = "animations"))]
@@ -386,8 +469,11 @@ pub fn connect_color_scheme(_cmd_tx: tokio::sync::mpsc::UnboundedSender<Cmd>) {}
 fn strip_spans(val: &mut serde_json::Value) {
     match val {
         serde_json::Value::Object(map) => {
-            let span_keys: Vec<String> =
-                map.keys().filter(|k| k.ends_with("span")).cloned().collect();
+            let span_keys: Vec<String> = map
+                .keys()
+                .filter(|k| k.ends_with("span"))
+                .cloned()
+                .collect();
             for k in span_keys {
                 map.remove(&k);
             }
@@ -451,7 +537,12 @@ fn ir_hash(name: &str, config: &MehConfig) -> u64 {
 
     let mut visited = BTreeSet::new();
     let mut deps = BTreeMap::new();
-    collect_deps(&win_def.widget, &config.yuck.widget_definitions, &mut visited, &mut deps);
+    collect_deps(
+        &win_def.widget,
+        &config.yuck.widget_definitions,
+        &mut visited,
+        &mut deps,
+    );
 
     let mut json_win = serde_json::to_value(win_def).unwrap_or_default();
     strip_spans(&mut json_win);
