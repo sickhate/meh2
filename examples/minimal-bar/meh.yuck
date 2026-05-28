@@ -33,7 +33,7 @@
             (label :class "username" :text USER))
         (box :halign "center"
             (label :class "date" :text DATE))
-        (box :halign "end" :spacing 8
+        (box :halign "end" :spacing 16
             (button :onclick "xdg-open https://github.com" :class "launcher"
                 (label :text ""))
             (button :onclick "foot" :class "launcher"
