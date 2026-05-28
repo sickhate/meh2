@@ -280,10 +280,10 @@ fn expand_tilde(path: &str) -> std::path::PathBuf {
             .map(std::path::PathBuf::from)
             .unwrap_or_else(|_| std::path::PathBuf::from(path));
     }
-    if let Some(rest) = path.strip_prefix("~/") {
-        if let Ok(home) = std::env::var("HOME") {
-            return std::path::PathBuf::from(home).join(rest);
-        }
+    if let Some(rest) = path.strip_prefix("~/")
+        && let Ok(home) = std::env::var("HOME")
+    {
+        return std::path::PathBuf::from(home).join(rest);
     }
     std::path::PathBuf::from(path)
 }
