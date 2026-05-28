@@ -104,7 +104,7 @@ jobs:
 
       - name: Binary size
         run: |
-          size=$(stat -c%s target/release/meh)
+          size=$(stat -c%s target/release/meh2)
           echo "Binary: $(( size / 1024 / 1024 )) MiB (${size} bytes)"
           # Enforce budget: minimal < 5 MiB, default/full < 12 MiB
           if [[ "${{ matrix.profile }}" == "minimal" && $size -gt $((5 * 1024 * 1024)) ]]; then
