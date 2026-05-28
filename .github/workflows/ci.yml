@@ -24,12 +24,12 @@ jobs:
             pkg-config build-essential cmake meson ninja-build \
             libgtk-4-dev libglib2.0-dev \
             libwayland-dev libxkbcommon-dev \
-            libgdk-pixbuf2.0-dev
+            libgdk-pixbuf2.0-dev libadwaita-1-dev
 
       - name: Build & install gtk4-layer-shell
         run: |
           git clone --depth=1 https://github.com/wmww/gtk4-layer-shell.git /tmp/gls
-          meson setup --prefix=/usr/local -Dvapi=false /tmp/gls /tmp/gls-build
+          meson setup --prefix=/usr/local -Dintrospection=false -Dvapi=false /tmp/gls /tmp/gls-build
           ninja -C /tmp/gls-build
           sudo ninja -C /tmp/gls-build install
           sudo ldconfig
@@ -78,12 +78,12 @@ jobs:
             pkg-config build-essential cmake meson ninja-build \
             libgtk-4-dev libglib2.0-dev \
             libwayland-dev libxkbcommon-dev \
-            libgdk-pixbuf2.0-dev
+            libgdk-pixbuf2.0-dev libadwaita-1-dev
 
       - name: Build & install gtk4-layer-shell
         run: |
           git clone --depth=1 https://github.com/wmww/gtk4-layer-shell.git /tmp/gls
-          meson setup --prefix=/usr/local -Dvapi=false /tmp/gls /tmp/gls-build
+          meson setup --prefix=/usr/local -Dintrospection=false -Dvapi=false /tmp/gls /tmp/gls-build
           ninja -C /tmp/gls-build
           sudo ninja -C /tmp/gls-build install
           sudo ldconfig
