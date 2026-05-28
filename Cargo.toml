@@ -32,7 +32,7 @@ simplexpr       = { path = "crates/simplexpr",       version = "0.1.0" }
 eww_shared_util = { path = "crates/eww_shared_util", version = "0.1.0" }
 
 # GTK4 stack (from Ewwii)
-gtk4             = { version = "0.10.3", features = ["v4_8", "v4_18"] }
+gtk4             = { version = "0.10.3", features = ["v4_14"] }
 gtk4-layer-shell = { version = "0.6.3" }
 libadwaita       = { version = "0.8", features = ["v1_3"], default-features = false }
 
