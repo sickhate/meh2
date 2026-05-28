@@ -115,6 +115,9 @@ impl MehPaths {
                 return Some(p);
             }
         }
+        #[cfg(feature = "builtin-default-config")]
+        return Some(self.config_dir.join("meh.scss"));
+        #[cfg(not(feature = "builtin-default-config"))]
         None
     }
 }
