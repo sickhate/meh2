@@ -105,7 +105,7 @@ All high-frequency scripts migrated to `.rhai`; Python fully eliminated from dae
 Remaining bash polls: `network` (1s, nmcli-heavy), `getProtonVPN` (10s, `timeout 4`), `getWeather` (600s).
 Remaining Python file: `notif-focus.py` — onclick utility only, never polled.
 
-#### Known Rhai quirks (see AGENTS.md for full guide)
+#### Known Rhai quirks
 - `string.trim()` / `string.replace()` are **in-place**, return `()` — never assign their result
 - Template strings `` `${var}` `` work in `.rhai` files; use `+` inside yuck strings
 - `json_decode` on error returns an empty map `#{}` — check `len() > 0` before indexing
