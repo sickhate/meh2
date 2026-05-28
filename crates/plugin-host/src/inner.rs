@@ -219,10 +219,10 @@ fn spawn_file_watcher(scripts: Vec<PathBuf>) {
     };
 
     for script in &scripts {
-        if let Some(dir) = script.parent() {
-            if let Err(e) = watcher.watch(dir, RecursiveMode::NonRecursive) {
-                tracing::warn!("plugin-host: cannot watch {}: {}", dir.display(), e);
-            }
+        if let Some(dir) = script.parent()
+            && let Err(e) = watcher.watch(dir, RecursiveMode::NonRecursive)
+        {
+            tracing::warn!("plugin-host: cannot watch {}: {}", dir.display(), e);
         }
     }
 
@@ -239,6 +239,7 @@ fn spawn_file_watcher(scripts: Vec<PathBuf>) {
 
 // ── Poll task ─────────────────────────────────────────────────────────────────
 
+#[allow(clippy::too_many_arguments)]
 async fn run_plugin_var(
     script: PathBuf,
     plugin_dir: PathBuf,
