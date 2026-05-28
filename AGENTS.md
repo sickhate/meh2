@@ -86,7 +86,7 @@ New crate: `crates/rhai-engine/`. Example: `examples/rhai-bar/`.
 
 ## Read this first
 
-You are Claude Code working in the **meh2** repository. This file is the single
+You are an agent working in the **meh2** repository. This file is the single
 source of truth for what this project is, what it is building toward, and the
 rules that govern every change. Read it top-to-bottom at the start of every
 session. If anything you are about to do contradicts this file, stop and ask.
@@ -108,7 +108,7 @@ from meh into meh2 via `git cherry-pick`; never merge wholesale.
 7. [Roadmap](#roadmap)
 8. [Coding conventions](#coding-conventions)
 9. [Performance principles](#performance-principles)
-10. [Rules for Claude Code](#rules-for-claude-code)
+10. [Rules for the agent](#rules-for-the-agent)
 
 -----
 
@@ -662,7 +662,7 @@ Same as meh, plus:
 
 -----
 
-## Rules for Claude Code
+## Rules for the agent
 
 - **Read this file top-to-bottom at the start of every session.**
 - **The prime directive is non-negotiable.** Zero overhead when Rhai is unused.

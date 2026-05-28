@@ -46,10 +46,12 @@ impl MehPaths {
             bail!("Config path must be a directory, not a file");
         }
         if !config_dir.exists() {
-            #[cfg(feature = "builtin-default-config")] {
+            #[cfg(feature = "builtin-default-config")]
+            {
                 std::fs::create_dir_all(config_dir)?;
             }
-            #[cfg(not(feature = "builtin-default-config"))] {
+            #[cfg(not(feature = "builtin-default-config"))]
+            {
                 bail!("Config directory {} does not exist", config_dir.display());
             }
         }
@@ -94,7 +96,13 @@ impl MehPaths {
             });
         let meh_dir = cfg_base.join("meh2");
         let eww_dir = cfg_base.join("eww");
-        let dir = if meh_dir.exists() { meh_dir } else if eww_dir.exists() { eww_dir } else { meh_dir };
+        let dir = if meh_dir.exists() {
+            meh_dir
+        } else if eww_dir.exists() {
+            eww_dir
+        } else {
+            meh_dir
+        };
         Self::from_config_dir(dir)
     }
 
@@ -238,7 +246,8 @@ impl MehConfig {
     pub fn load(paths: &MehPaths) -> Result<Self> {
         let main_file = paths.main_yuck_file();
         if !main_file.exists() {
-            #[cfg(feature = "builtin-default-config")] {
+            #[cfg(feature = "builtin-default-config")]
+            {
                 let mut db = FileDb::new(paths.config_dir.clone());
                 let yuck = db
                     .load_yuck_str("builtin-default".into(), DEFAULT_YUCK.into())
@@ -253,7 +262,8 @@ impl MehConfig {
                 }
                 return Ok(Self { yuck, var_state });
             }
-            #[cfg(not(feature = "builtin-default-config"))] {
+            #[cfg(not(feature = "builtin-default-config"))]
+            {
                 bail!("Config file not found: {}", main_file.display());
             }
         }
