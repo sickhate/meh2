@@ -4,6 +4,10 @@ All notable changes to meh2 are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Binding update no longer clones global_vars every frame** — `Binding::update()` and `LoopBinding::update()` previously cloned the entire `global_vars` HashMap (~50 entries) on every 33ms frame tick for each binding. Now they build a minimal HashMap using only the vars each expression actually references (typically 1–3). Eliminates the primary source of allocation churn that caused RSS to climb from ~48 MB to 60–100 MB. Also optimizes `EvalCtx::all_vars()` to start with scope (small) and only pull needed global vars.
+
 ### Added
 - **`builtin-default-config` Cargo feature** — embeds `examples/minimal-bar/` yuck + SCSS into the binary. When no `~/.config/meh2/` config exists, the embedded minimal bar (clock, hostname, date, username, quicklaunch icons) is used automatically. Feature is opt-in (`--features builtin-default-config`), not part of any default profile.
 - **`meh2-default-config/` PKGBUILD** — variant that builds with `builtin-default-config` for AUR. `makepkg -si` produces a `meh2` binary that works out of the box with zero configuration.

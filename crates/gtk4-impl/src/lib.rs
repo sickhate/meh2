@@ -28,9 +28,20 @@ pub struct Binding {
 
 impl Binding {
     pub fn update(&mut self, global_vars: &HashMap<VarName, DynVal>) -> bool {
-        let mut all = global_vars.clone();
-        all.extend(self.scope.clone());
-        let new_val = self.expr.eval(&all).map(|v| v.0).unwrap_or_default();
+        let refs = self.expr.collect_var_refs();
+        let new_val = if refs.is_empty() {
+            self.expr.eval(&HashMap::new()).map(|v| v.0).unwrap_or_default()
+        } else {
+            let mut vars = HashMap::with_capacity(refs.len());
+            for var in refs {
+                if !vars.contains_key(&var) {
+                    if let Some(val) = self.scope.get(&var).or_else(|| global_vars.get(&var)) {
+                        vars.insert(var, val.clone());
+                    }
+                }
+            }
+            self.expr.eval(&vars).map(|v| v.0).unwrap_or_default()
+        };
         if new_val != self.last_val {
             (self.setter)(new_val.clone());
             self.last_val = new_val;
@@ -54,9 +65,20 @@ pub struct LoopBinding {
 
 impl LoopBinding {
     pub fn update(&mut self, global_vars: &HashMap<VarName, DynVal>) -> bool {
-        let mut all = global_vars.clone();
-        all.extend(self.scope.clone());
-        let new_val = self.expr.eval(&all).map(|v| v.0).unwrap_or_default();
+        let refs = self.expr.collect_var_refs();
+        let new_val = if refs.is_empty() {
+            self.expr.eval(&HashMap::new()).map(|v| v.0).unwrap_or_default()
+        } else {
+            let mut vars = HashMap::with_capacity(refs.len());
+            for var in refs {
+                if !vars.contains_key(&var) {
+                    if let Some(val) = self.scope.get(&var).or_else(|| global_vars.get(&var)) {
+                        vars.insert(var, val.clone());
+                    }
+                }
+            }
+            self.expr.eval(&vars).map(|v| v.0).unwrap_or_default()
+        };
         if new_val == self.last_val {
             return false;
         }

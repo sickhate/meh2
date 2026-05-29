@@ -170,8 +170,13 @@ impl<'a> EvalCtx<'a> {
     }
 
     pub fn all_vars(&self) -> HashMap<VarName, DynVal> {
-        let mut vars = self.global_vars.clone();
+        let mut vars = HashMap::with_capacity(self.scope.len().max(16));
         vars.extend(self.scope.clone());
+        for (k, v) in self.global_vars {
+            if !self.scope.contains_key(k) {
+                vars.insert(k.clone(), v.clone());
+            }
+        }
         vars
     }
 
