@@ -7,17 +7,13 @@ All notable changes to meh2 are documented here.
 
 ### Fixed
 - **binding update per-tick speed** — Added `var_refs` cache to `Binding` and
-  `LoopBinding` so `collect_var_refs()` is called once at build time instead of
-  every 33ms tick. Added `intersects()` check so bindings whose referenced vars
-  haven't changed are skipped entirely during `update_bindings()`. This eliminates
-  unnecessary eval, HashMap builds, and string clones on every CAVA_BARS tick.
-- **RSS growth when windows closed** — Added `pending.clear()` in
-   `forward_var_updates()` when windows are closed. deflisten sources (e.g.
-   CAVA_BARS at 30 Hz) kept sending updates that accumulated in the pending
-   HashMap while no windows were open to receive them, causing unbounded
-   memory growth.
+   `LoopBinding` so `collect_var_refs()` is called once at build time instead of
+   every 33ms tick. Added `intersects()` check so bindings whose referenced vars
+   haven't changed are skipped entirely during `update_bindings()`. This eliminates
+   unnecessary eval, HashMap builds, and string clones on every CAVA_BARS tick.
 - **notification history file** — Added `MAX_NOTIFS=50` cap to `notifications.sh`
    to prevent unbounded growth of `~/.local/share/meh/notifications.json`.
+
 
 
 ## [Unreleased]

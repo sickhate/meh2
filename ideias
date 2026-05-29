@@ -1,0 +1,73 @@
+Prompt Template for AI
+"I need a toggle-controlled drawer animation that:
+
+Trigger: A boolean variable (e.g., LAUNCHER_OPEN) that toggles on button click
+Animation Type: Revealer with slideright transition — smooth spring-like entrance from left edge
+Duration: 300-400ms with ease-out-cubic easing for a "bouncy" feel
+Content: A vertical box containing quick launcher buttons/icons
+Behavior:
+When toggled true → drawer slides in from left, revealing launcher buttons
+When toggled false → drawer slides left, hiding launcher buttons
+No animation when window is closed (idle efficiency)
+Visual description: Think of it like a spring-loaded sidebar that smoothly unfolds from the left edge with a pleasant deceleration curve, not jerky or robotic."
+
+More Specific Version (For meh2 Implementation)
+"Create a quick launcher drawer for meh2 that:
+
+Uses a revealer widget with transition: "slideright" and duration: 300
+Controlled by a reactive variable QUICKLAUNCHER_VISIBLE
+Easing function: ease-out-cubic for natural deceleration (spring-like feel)
+Content: Vertical stack of launcher buttons inside the revealer
+Toggle button triggers meh2 update QUICKLAUNCHER_VISIBLE=${!QUICKLAUNCHER_VISIBLE}
+Animation only runs when drawer state changes; zero overhead when static"
+Even More Visual Description
+"I want a 'spring-loaded launcher panel' effect:
+
+Like when you click a menu button and a sidebar smoothly pops out from the left with a satisfying spring-like motion—fast at the start, then gently easing to a stop. It should feel responsive and premium, not sluggish. When you close it, it slides back left smoothly. The animation should take about 300-400 milliseconds and feel like it has weight to it."
+
+Technical Breakdown (For Code Generation)
+Code
+Animation Properties:
+├─ Widget Type: revealer
+├─ Direction: slideright (left → right = drawer appearing)
+├─ Duration: 300ms (or 350ms for more spring-like)
+├─ Easing: ease-out-cubic 
+│  (fast start, smooth deceleration = spring feel)
+├─ Trigger: toggle variable (true/false)
+├─ State: reveal-child = LAUNCHER_VISIBLE
+└─ Container: vertical box with launcher items
+
+Interaction Flow:
+1. User clicks toggle button
+2. LAUNCHER_VISIBLE flips (false → true or true → false)
+3. Revealer detects state change
+4. Animation plays: 300ms slideright with ease-out-cubic
+5. Drawers slides in/out smoothly
+Key Phrases AI Understands
+Concept	How to Say It
+Spring effect	"ease-out-cubic easing" or "deceleration curve"
+Pop/spring entrance	"slideright transition" with "fast start, gentle stop"
+Pleasant/smooth	"cubic easing" (feels organic, not linear)
+Responsive	"300-400ms duration" (not too fast, not sluggish)
+Drawer from left	"revealer with slideright direction"
+Toggle control	"boolean state variable that triggers animation"
+Zero idle cost	"animation only runs during state change, no continuous loop"
+Complete AI Instruction Example
+"In meh2, create an animated quick launcher drawer using:
+
+A revealer widget set to transition: "slideright"
+Duration of 300ms with ease-out-cubic easing (for spring-like deceleration)
+Bound to a toggle variable QUICKLAUNCHER_OPEN
+When toggled true, the drawer slides in from the left edge smoothly
+When toggled false, it slides back out to the left
+Content is a vertical box with launcher buttons/icons
+Toggle is triggered by a button click that runs meh2 update QUICKLAUNCHER_OPEN=${!QUICKLAUNCHER_OPEN}
+The animation should feel pleasant and responsive, not robotic or sluggish"
+Why These Terms Work
+"slideright" → AI knows this is a GTK4 revealer transition
+"ease-out-cubic" → Specific easing function (not generic "smooth")
+"300ms" → Concrete timing (feels responsive, not slow)
+"spring-like" → Conveys the feel/aesthetic you want
+"toggle variable" → AI understands reactive state binding
+"drawer from left" → Clear directional intent
+

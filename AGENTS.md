@@ -671,11 +671,8 @@ Same as meh, plus:
   every tick.
 - **Bindings skipped when vars not changed.** `update_bindings()` now takes a `changed_vars`
   set. Each binding checks `intersects()` against its cached `var_refs` before running eval.
-  When only CAVA_BARS changes (30 Hz), ~190 of 200+ bindings are skipped entirely —
-  no eval, no HashMap build, no string comparison.
-- **Pending var map cleared when windows closed.** `forward_var_updates()` clears its
-   pending HashMap when no windows are open, preventing deflisten sources from
-   accumulating stale var values in memory during idle periods.
+   When only CAVA_BARS changes (30 Hz), ~190 of 200+ bindings are skipped entirely —
+   no eval, no HashMap build, no string comparison.
 
 -----
 
