@@ -1,7 +1,7 @@
 # Maintainer: sickhate <archate@gmail.com>
 pkgname=meh2
-pkgver=0.1.0.r54.ee6b510
-pkgrel=2
+pkgver=0.1.0.r56.a5b057c
+pkgrel=1
 pkgdesc="GTK4 Wayland widget system with Rhai scripting (meh2 fork of meh/eww)"
 arch=('x86_64')
 url="https://github.com/sickhate/meh2"
@@ -22,6 +22,7 @@ sha256sums=('SKIP')
 prepare() {
     cd "$srcdir/$pkgname"
     export RUSTUP_TOOLCHAIN=stable
+    rm -rf target
     cargo fetch --target "$(rustc -vV | sed -n 's/host: //p')"
 }
 

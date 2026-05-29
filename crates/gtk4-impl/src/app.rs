@@ -2,7 +2,7 @@
 //! GTK4 application state and command handling.
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -315,10 +315,13 @@ impl App {
     /// Reactive update: re-evaluate only bindings whose expressions changed.
     /// This is O(bindings) per update, not O(widget-tree), and causes no GTK layout passes
     /// unless a value actually changed.
-    pub fn update_bindings(&mut self) {
+    pub fn update_bindings(&mut self, changed_vars: &HashSet<VarName>) {
         let global_vars = &self.config.var_state.vars;
         for live in self.open_windows.values_mut() {
             for binding in &mut live.bindings {
+                if !binding.intersects(changed_vars) {
+                    continue;
+                }
                 binding.update(global_vars);
             }
         }
@@ -337,12 +340,13 @@ impl App {
     }
 
     pub fn update_vars(&mut self, vars: &HashMap<String, String>) {
+        let mut changed: HashSet<VarName> = HashSet::with_capacity(vars.len());
         for (k, v) in vars {
-            self.config
-                .var_state
-                .set(VarName(k.clone()), DynVal::from_string(v.clone()));
+            let name = VarName(k.clone());
+            changed.insert(name.clone());
+            self.config.var_state.set(name, DynVal::from_string(v.clone()));
         }
-        self.update_bindings();
+        self.update_bindings(&changed);
     }
 
     pub fn handle_cmd(&mut self, cmd: Cmd) {
@@ -411,10 +415,11 @@ impl App {
                 let _ = resp.send(IpcResponse::ok(names));
             }
             Cmd::SetVarBatch { vars } => {
+                let changed: HashSet<VarName> = vars.keys().cloned().collect();
                 for (name, val) in vars {
                     self.config.var_state.set(name, val);
                 }
-                self.update_bindings();
+                self.update_bindings(&changed);
             }
             Cmd::MonitorsChanged => {
                 self.handle_monitors_changed();

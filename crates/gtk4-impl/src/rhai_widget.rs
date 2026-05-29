@@ -57,6 +57,10 @@ impl RhaiWidgetBinding {
         true
     }
 
+    pub fn intersects(&self, changed: &std::collections::HashSet<VarName>) -> bool {
+        self.watched_vars.iter().any(|v| changed.contains(v))
+    }
+
     fn rebuild(&self, global_vars: &HashMap<VarName, DynVal>) {
         let Some(engine) = meh_rhai_engine::global() else {
             tracing::warn!("rhai-widget: engine unavailable on rebuild");

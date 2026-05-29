@@ -21,6 +21,8 @@ use yuck::config::{
 /// Call `update` when global vars change; the setter fires only if the evaluated value changed.
 pub struct Binding {
     expr: SimplExpr,
+    var_refs: Vec<VarName>,
+    is_constant: bool,
     scope: HashMap<VarName, DynVal>,
     setter: Box<dyn FnMut(String) + 'static>,
     last_val: String,
@@ -28,15 +30,15 @@ pub struct Binding {
 
 impl Binding {
     pub fn update(&mut self, global_vars: &HashMap<VarName, DynVal>) -> bool {
-        let refs = self.expr.collect_var_refs();
-        let new_val = if refs.is_empty() {
+        let new_val = if self.is_constant {
             self.expr.eval(&HashMap::new()).map(|v| v.0).unwrap_or_default()
         } else {
+            let refs = &self.var_refs;
             let mut vars = HashMap::with_capacity(refs.len());
             for var in refs {
-                if !vars.contains_key(&var) {
-                    if let Some(val) = self.scope.get(&var).or_else(|| global_vars.get(&var)) {
-                        vars.insert(var, val.clone());
+                if !vars.contains_key(var) {
+                    if let Some(val) = self.scope.get(var).or_else(|| global_vars.get(var)) {
+                        vars.insert(var.clone(), val.clone());
                     }
                 }
             }
@@ -50,12 +52,21 @@ impl Binding {
             false
         }
     }
+
+    pub fn intersects(&self, changed: &std::collections::HashSet<VarName>) -> bool {
+        if self.is_constant {
+            return false;
+        }
+        self.var_refs.iter().any(|v| changed.contains(v))
+    }
 }
 
 /// A live reactive `for` loop binding.
 /// When the elements expression changes, clears and rebuilds the container children.
 pub struct LoopBinding {
     expr: SimplExpr,
+    var_refs: Vec<VarName>,
+    is_constant: bool,
     scope: HashMap<VarName, DynVal>,
     lp: LoopWidgetUse,
     widget_defs: HashMap<String, WidgetDefinition>,
@@ -65,15 +76,15 @@ pub struct LoopBinding {
 
 impl LoopBinding {
     pub fn update(&mut self, global_vars: &HashMap<VarName, DynVal>) -> bool {
-        let refs = self.expr.collect_var_refs();
-        let new_val = if refs.is_empty() {
+        let new_val = if self.is_constant {
             self.expr.eval(&HashMap::new()).map(|v| v.0).unwrap_or_default()
         } else {
+            let refs = &self.var_refs;
             let mut vars = HashMap::with_capacity(refs.len());
             for var in refs {
-                if !vars.contains_key(&var) {
-                    if let Some(val) = self.scope.get(&var).or_else(|| global_vars.get(&var)) {
-                        vars.insert(var, val.clone());
+                if !vars.contains_key(var) {
+                    if let Some(val) = self.scope.get(var).or_else(|| global_vars.get(var)) {
+                        vars.insert(var.clone(), val.clone());
                     }
                 }
             }
@@ -95,6 +106,13 @@ impl LoopBinding {
         populate_loop_container(&self.container, &self.lp, &ctx);
         true
     }
+
+    pub fn intersects(&self, changed: &std::collections::HashSet<VarName>) -> bool {
+        if self.is_constant {
+            return false;
+        }
+        self.var_refs.iter().any(|v| changed.contains(v))
+    }
 }
 
 /// Either an attribute binding, a loop binding, or a Rhai widget binding.
@@ -112,6 +130,15 @@ impl AnyBinding {
             AnyBinding::Loop(b) => b.update(global_vars),
             #[cfg(feature = "rhai")]
             AnyBinding::RhaiWidget(b) => b.update(global_vars),
+        }
+    }
+
+    pub fn intersects(&self, changed: &std::collections::HashSet<VarName>) -> bool {
+        match self {
+            AnyBinding::Attr(b) => b.intersects(changed),
+            AnyBinding::Loop(b) => b.intersects(changed),
+            #[cfg(feature = "rhai")]
+            AnyBinding::RhaiWidget(b) => b.intersects(changed),
         }
     }
 }
@@ -147,8 +174,12 @@ fn maybe_bind<F>(
     {
         BINDING_COLLECTOR.with(|col| {
             if let Some(bindings) = col.borrow_mut().as_mut() {
+                let var_refs = expr.collect_var_refs();
+                let is_constant = var_refs.is_empty();
                 bindings.push(AnyBinding::Attr(Binding {
                     expr,
+                    var_refs,
+                    is_constant,
                     scope: scope.clone(),
                     setter: Box::new(setter),
                     last_val: initial,
@@ -165,8 +196,12 @@ fn register_loop_binding(lp: &LoopWidgetUse, ctx: &EvalCtx, container: gtk4::Box
     }
     BINDING_COLLECTOR.with(|col| {
         if let Some(bindings) = col.borrow_mut().as_mut() {
+            let var_refs = lp.elements_expr.collect_var_refs();
+            let is_constant = var_refs.is_empty();
             bindings.push(AnyBinding::Loop(LoopBinding {
                 expr: lp.elements_expr.clone(),
+                var_refs,
+                is_constant,
                 scope: ctx.scope.clone(),
                 lp: lp.clone(),
                 widget_defs: ctx.widget_defs.clone(),

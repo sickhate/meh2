@@ -665,6 +665,17 @@ Same as meh, plus:
   on every 33ms tick. Now they collect var refs from the expression and build a HashMap with
   only those vars (typically 1–3 per binding). This eliminates the primary source of allocation
   churn that inflated RSS from ~48 MB to 60–100 MB.
+- **Binding var_refs cached at build time.** `collect_var_refs()` is called once when the
+  binding is created and stored in `var_refs` / `is_constant`. The per-tick `update()` method
+  uses the cached refs directly, eliminating the expression tree walk and Vec allocation on
+  every tick.
+- **Bindings skipped when vars not changed.** `update_bindings()` now takes a `changed_vars`
+  set. Each binding checks `intersects()` against its cached `var_refs` before running eval.
+  When only CAVA_BARS changes (30 Hz), ~190 of 200+ bindings are skipped entirely —
+  no eval, no HashMap build, no string comparison.
+- **Pending var map cleared when windows closed.** `forward_var_updates()` clears its
+   pending HashMap when no windows are open, preventing deflisten sources from
+   accumulating stale var values in memory during idle periods.
 
 -----
 
