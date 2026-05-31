@@ -37,8 +37,27 @@ All notable changes to meh2 are documented here.
 
 ### Runtime optimisations (2026-05-31)
 
-#### daemon memory reduction
-- **mimalloc global allocator** — replaced the default glibc `malloc` with `mimalloc` (registered via `#[global_allocator]` in `crates/cli/src/main.rs`). glibc's allocator retains freed pages in per-arena free-lists and rarely returns them to the OS, so the daemon's RSS only ever climbed — never shrank — as poll scripts allocated and freed transient Rhai heaps. mimalloc returns freed memory aggressively, fixing the "RSS slowly climbs from 45 MB to 200 MB" growth pattern. Compiled with `default-features = false` (no secure/debug overhead).
+#### daemon memory leak fixed (RSS climbed 75 MB → 500 MB)
+The daemon's resident memory grew without bound during normal use — opening
+image-heavy popups (e.g. the wallpaper grid: 150 decoded thumbnails) added
+~120 MB per session that was never released. Root cause was two compounding
+bugs, both fixed here:
+- **Popups were hidden, not destroyed** — `close_window()` called GTK4's
+  `gtk_window_close()`, which only *hides* a window. GTK4 keeps every toplevel
+  it creates in an internal registry until explicitly destroyed, so each popup
+  open/close leaked the entire widget tree (and its decoded pixbufs). Switched
+  to `gtk_window_destroy()`.
+- **glibc never returned the freed memory** — even after `destroy()` frees the
+  pixbufs, glibc retains the pages in its arenas, so RSS only grows. Added a
+  `malloc_trim(0)` after each popup closes (gated to linux-gnu) to hand the
+  pages back to the kernel. The bar window stays open, so the trim fires on
+  every popup close, not only when all windows close.
+
+Net result: the bar holds a flat ~28 MB private RSS through unlimited popup
+toggling (with the cairo GSK renderer; ~77 MB on the default Vulkan renderer).
+An earlier attempt used the mimalloc allocator, but that only masked the leak
+(flat-but-high baseline) and inflated idle RSS; it was reverted in favour of
+the real fix above.
 - **`Arc<AST>` Rhai cache** — `get_or_compile()` previously returned `AST` by value, causing a deep clone of the full syntax tree on every poll tick. Changed `cache` to `HashMap<PathBuf, Arc<AST>>`; callers share a reference-counted pointer (`Arc::clone` = one atomic increment). Eliminates the largest per-tick allocation in the Rhai engine path.
 - **Poll value deduplication** — `run_poll` now tracks `last: Option<String>` and skips the `tx.send` + `update_bindings` call when the script output is identical to the previous tick. Stable polls (stopped player, VPN off, no torrents, etc.) now produce zero channel writes and zero GTK work. Cuts `SetVarBatch` traffic by 70–90 % under typical idle conditions.
 - **Tokio thread limits** — runtime capped at `worker_threads(2)` (bar is I/O-bound, not CPU-bound) and `max_blocking_threads(16)` (caps the pool that runs Rhai `spawn_blocking` tasks). Reduces per-thread stack overhead and heap fragmentation from thread-local allocator arenas.

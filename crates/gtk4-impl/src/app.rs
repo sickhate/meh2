@@ -216,12 +216,26 @@ impl App {
     }
 
     pub fn close_window(&mut self, name: &str) {
-        if let Some(live) = self.open_windows.remove(name) {
-            live.gtk_win.close();
-        }
+        let closed = if let Some(live) = self.open_windows.remove(name) {
+            // destroy(), not close(): GTK4 keeps every toplevel it created in an
+            // internal registry until explicitly destroyed. close() only hides the
+            // window, so repeated popup open/close leaks the whole widget tree.
+            live.gtk_win.destroy();
+            true
+        } else {
+            false
+        };
         if self.open_windows.is_empty() {
             self.windows_open.store(false, Ordering::Relaxed);
             self.window_closed.notify_waiters();
+        }
+        if closed {
+            // The closed popup's widget tree + decoded pixbufs have just been
+            // dropped. glibc keeps that freed memory in its arenas (RSS only
+            // grows), so image-heavy popups make the daemon climb without bound.
+            // Trim here — not only when the map empties — because the bar window
+            // stays open, so the map is never empty during normal popup use.
+            trim_heap();
         }
     }
 
@@ -566,3 +580,23 @@ fn ir_hash(name: &str, config: &MehConfig) -> u64 {
     combined.to_string().hash(&mut hasher);
     hasher.finish()
 }
+
+// ── Heap trimming ───────────────────────────────────────────────────────────
+
+/// Return free heap pages to the OS after popups close.
+///
+/// GTK image widgets decode pixbufs on the heap; when a popup is destroyed those
+/// allocations are freed, but glibc's allocator retains the pages in its arenas,
+/// so resident memory only ever grows as image-heavy popups are opened. A single
+/// `malloc_trim(0)` releases the top-of-arena free space back to the kernel.
+/// No-op on non-glibc targets.
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
+fn trim_heap() {
+    // Safety: malloc_trim is thread-safe and has no preconditions.
+    unsafe {
+        libc::malloc_trim(0);
+    }
+}
+
+#[cfg(not(all(target_os = "linux", target_env = "gnu")))]
+fn trim_heap() {}

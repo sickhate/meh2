@@ -1,9 +1,6 @@
 // GPL-3.0-or-later
 //! meh — widget system for Wayland / GTK4
 
-#[global_allocator]
-static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
-
 use std::collections::HashMap;
 
 use anyhow::{Context, Result};

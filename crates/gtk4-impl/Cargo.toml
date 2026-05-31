@@ -34,3 +34,6 @@ serde_json        = { workspace = true }
 glow              = { workspace = true, optional = true }
 tokio             = { workspace = true }
 itertools         = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = { workspace = true }
