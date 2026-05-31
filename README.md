@@ -17,7 +17,14 @@
 | Python in poll path | Required | **None* |
 | Persistent subprocess RSS | ~5–6 MB each | None when using Rhai |
 | Rhai engine overhead | N/A | ~2–4 MB RSS |
+| Allocator | glibc malloc | mimalloc (returns freed pages to OS) |
 | Poll gating | Windows-closed pause | Same |
+
+> meh2 links **mimalloc** as its global allocator. glibc's `malloc` keeps freed
+> pages in per-arena free-lists and rarely hands them back, so a daemon that
+> allocates transient buffers every poll tick shows a steadily climbing RSS that
+> never recovers. mimalloc releases freed memory aggressively, keeping resident
+> memory flat over long uptimes.
 
 ---
 
