@@ -30,6 +30,7 @@ jq = ["simplexpr/jq", "yuck/jq", "meh_gtk4/jq"]
 tz = ["simplexpr/tz"]
 
 [dependencies]
+mimalloc           = { workspace = true }
 meh_daemon         = { workspace = true }
 meh_core           = { workspace = true }
 meh_gtk4           = { workspace = true }

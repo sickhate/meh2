@@ -83,6 +83,9 @@ jaq-syn       = "1.6.0"
 # XML parsing (notifier-host SNI introspection)
 quick-xml  = { version = "0.37.1", features = ["serialize"] }
 
+# Allocator — returns freed memory to OS aggressively (glibc malloc holds pages forever)
+mimalloc = { version = "0.1", default-features = false }
+
 # Misc
 notify       = "6.1.1"
 nix          = { version = "0.29.0", features = ["process", "fs", "signal"] }
