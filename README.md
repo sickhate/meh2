@@ -39,14 +39,15 @@
 | Python in poll path | Required | **None* |
 | Persistent subprocess RSS | ~5–6 MB each | None when using Rhai |
 | Rhai engine overhead | N/A | ~2–4 MB RSS |
-| Allocator | glibc malloc | mimalloc (returns freed pages to OS) |
+| Resident memory (bar, cairo renderer) | — | ~28 MB, flat |
 | Poll gating | Windows-closed pause | Same |
 
-> meh2 links **mimalloc** as its global allocator. glibc's `malloc` keeps freed
-> pages in per-arena free-lists and rarely hands them back, so a daemon that
-> allocates transient buffers every poll tick shows a steadily climbing RSS that
-> never recovers. mimalloc releases freed memory aggressively, keeping resident
-> memory flat over long uptimes.
+> **Memory.** Popups are torn down with `gtk_window_destroy()` (not `close()`,
+> which only hides them and leaks the widget tree), and a `malloc_trim(0)` after
+> each popup closes returns the freed image memory to the OS — so resident memory
+> stays flat no matter how many menus you open. Run the bar with the cairo GSK
+> renderer (`GSK_RENDERER=cairo`) for the lowest footprint (~28 MB); the default
+> Vulkan renderer holds ~50 MB of GPU buffers for otherwise-static bar content.
 
 ---
 
