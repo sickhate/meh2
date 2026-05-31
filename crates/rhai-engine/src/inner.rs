@@ -36,7 +36,7 @@ pub fn init() -> Arc<RhaiEngine> {
 /// share across threads via `Arc`.
 pub struct RhaiEngine {
     engine: Engine,
-    cache: Mutex<HashMap<PathBuf, AST>>,
+    cache: Mutex<HashMap<PathBuf, Arc<AST>>>,
 }
 
 // Safety: `Engine` is Send+Sync when compiled with the `sync` feature (which
@@ -227,7 +227,7 @@ impl RhaiEngine {
 
         let result: Dynamic = self
             .engine
-            .eval_ast_with_scope(&mut scope, &ast)
+            .eval_ast_with_scope(&mut scope, &*ast)
             .map_err(|e| anyhow::anyhow!("rhai `{}`: {}", abs.display(), e))?;
 
         Ok(dynamic_to_string(result))
@@ -258,7 +258,7 @@ impl RhaiEngine {
 
         let result: Dynamic = self
             .engine
-            .call_fn::<Dynamic>(&mut scope, &ast, fn_name, ())
+            .call_fn::<Dynamic>(&mut scope, &*ast, fn_name, ())
             .map_err(|e| anyhow::anyhow!("rhai `{}::{}`: {}", abs.display(), fn_name, e))?;
 
         Ok(dynamic_to_string(result))
@@ -294,7 +294,7 @@ impl RhaiEngine {
 
         let result: Dynamic = self
             .engine
-            .call_fn::<Dynamic>(&mut scope, &ast, fn_name, ())
+            .call_fn::<Dynamic>(&mut scope, &*ast, fn_name, ())
             .map_err(|e| anyhow::anyhow!("rhai `{}::{}`: {}", abs.display(), fn_name, e))?;
 
         dynamic_to_widget_data(result)
@@ -320,27 +320,28 @@ impl RhaiEngine {
 
     // ── Internals ─────────────────────────────────────────────────────────────
 
-    fn get_or_compile(&self, path: &PathBuf) -> Result<AST> {
+    fn get_or_compile(&self, path: &PathBuf) -> Result<Arc<AST>> {
         {
             let cache = self
                 .cache
                 .lock()
                 .map_err(|_| anyhow::anyhow!("rhai cache mutex poisoned"))?;
             if let Some(ast) = cache.get(path) {
-                return Ok(ast.clone());
+                return Ok(Arc::clone(ast));
             }
         }
 
-        let ast = self
-            .engine
-            .compile_file(path.clone())
-            .map_err(|e| anyhow::anyhow!("rhai compile `{}`: {}", path.display(), e))?;
+        let ast = Arc::new(
+            self.engine
+                .compile_file(path.clone())
+                .map_err(|e| anyhow::anyhow!("rhai compile `{}`: {}", path.display(), e))?,
+        );
 
         let mut cache = self
             .cache
             .lock()
             .map_err(|_| anyhow::anyhow!("rhai cache mutex poisoned"))?;
-        cache.insert(path.clone(), ast.clone());
+        cache.insert(path.clone(), Arc::clone(&ast));
         Ok(ast)
     }
 }

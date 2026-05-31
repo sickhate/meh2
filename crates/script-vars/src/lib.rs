@@ -108,8 +108,10 @@ async fn run_poll(
     };
 
     // Always fetch an initial value to populate var_state before any window opens.
+    let mut last: Option<String> = None;
     if let Ok(out) = run_source(&cmd, &config_dir).await {
-        let _ = tx.send((def.name.clone(), DynVal::from_string(out)));
+        let _ = tx.send((def.name.clone(), DynVal::from_string(out.clone())));
+        last = Some(out);
     }
 
     let mut timer = tokio::time::interval(def.interval);
@@ -123,8 +125,13 @@ async fn run_poll(
                     continue;
                 }
                 match run_source(&cmd, &config_dir).await {
-                    Ok(out) => { let _ = tx.send((def.name.clone(), DynVal::from_string(out))); }
-                    Err(e)  => tracing::warn!("poll var `{}` error: {}", def.name, e),
+                    Ok(out) => {
+                        if last.as_deref() != Some(&out) {
+                            let _ = tx.send((def.name.clone(), DynVal::from_string(out.clone())));
+                            last = Some(out);
+                        }
+                    }
+                    Err(e) => tracing::warn!("poll var `{}` error: {}", def.name, e),
                 }
             }
         }

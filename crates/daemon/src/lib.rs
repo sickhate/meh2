@@ -121,6 +121,8 @@ pub fn run(paths: MehPaths, daemonize: bool) -> Result<()> {
         .spawn(move || {
             let rt = tokio::runtime::Builder::new_multi_thread()
                 .thread_name("meh-tokio")
+                .worker_threads(2)
+                .max_blocking_threads(16)
                 .enable_all()
                 .build()
                 .expect("tokio runtime");

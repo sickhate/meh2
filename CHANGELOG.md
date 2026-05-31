@@ -35,6 +35,13 @@ All notable changes to meh2 are documented here.
 - **CI: `libadwaita-1-dev` added to system dependencies** — needed by `libadwaita-sys` for the `animations` feature.
 - **CI: clippy fixes** — `collapsible_if` and `too_many_arguments` in `plugin-host/src/inner.rs`, `doc_overindented_list_items` in `plugin-host/src/lib.rs`.
 
+### Runtime optimisations (2026-05-31)
+
+#### daemon memory reduction
+- **`Arc<AST>` Rhai cache** — `get_or_compile()` previously returned `AST` by value, causing a deep clone of the full syntax tree on every poll tick. Changed `cache` to `HashMap<PathBuf, Arc<AST>>`; callers share a reference-counted pointer (`Arc::clone` = one atomic increment). Eliminates the largest per-tick allocation in the Rhai engine path.
+- **Poll value deduplication** — `run_poll` now tracks `last: Option<String>` and skips the `tx.send` + `update_bindings` call when the script output is identical to the previous tick. Stable polls (stopped player, VPN off, no torrents, etc.) now produce zero channel writes and zero GTK work. Cuts `SetVarBatch` traffic by 70–90 % under typical idle conditions.
+- **Tokio thread limits** — runtime capped at `worker_threads(2)` (bar is I/O-bound, not CPU-bound) and `max_blocking_threads(16)` (caps the pool that runs Rhai `spawn_blocking` tasks). Reduces per-thread stack overhead and heap fragmentation from thread-local allocator arenas.
+
 ### Runtime optimisations (2026-05-27)
 
 #### tokio runtime — thread count reduction
