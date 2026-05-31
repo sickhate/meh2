@@ -6,6 +6,28 @@
 
 ---
 
+## Features
+
+- **Yuck configuration** — same S-expression language as eww/meh. Existing configs are compatible.
+- **GTK4 + Wayland-native** — `gtk4-layer-shell`, fractional scaling, hardware-accelerated rendering. No X11.
+- **Rhai scripting engine** — `.rhai` files and `rhai:` inline expressions as `defpoll`/`deflisten` sources. Runs in-process, no fork; AST compiled once and cached (< 1 ms per tick).
+- **Rhai plugin system** — drop a directory into `~/.config/meh2/plugins/`; plugins contribute vars and custom `defwidget`s declared in `plugin.toml`.
+- **Rhai widgets** — `(rhai-widget)` builds live widget trees from a Rhai function, rebuilt only when its watched vars change.
+- **Python-free polling** — `json_decode`, string ops, and `run_shell` cover every use case; no Python interpreter in the poll path.
+- **Reactive bindings** — variable updates push only to affected widgets. No full tree rebuilds.
+- **Granular hot reload** — `meh2 reload` rebuilds only windows whose definition changed; unchanged windows keep their state.
+- **Poll gating** — `defpoll` subprocesses pause when no windows are open. Idle daemon sits at ~0.17% CPU.
+- **`defsubscribe`** — inotify file watchers (with tilde expansion + atomic-write support) and DBus property watchers. Zero-cost reactive sources — no polling, no subprocess.
+- **Deflisten process groups** — `deflisten` subprocesses run for the daemon's lifetime; SIGTERM on shutdown reaches grandchildren (inotifywait, playerctl --follow, nmcli monitor, etc.).
+- **Declarative animations** — `AdwTimedAnimation` on `progress` values and opacity. Interruptible, respects system reduced-motion.
+- **Native app launcher** — `(launcher)` widget: instant `gio::AppInfo` search, PATH executable autocomplete, keyboard nav, click-to-launch.
+- **System tray** — StatusNotifierItem/StatusNotifierHost. Opt-in via `systray` Cargo feature.
+- **`(shader)` widget** — GLSL fragment shaders via `GtkGLArea`. Full profile only.
+- **mimalloc allocator** — returns freed memory to the OS, keeping resident memory flat over long uptimes.
+- **Three build profiles**: `minimal`, `default` (systray + dbus + animations + rhai + plugins), `full` (+ shader).
+
+---
+
 ## Performance
 
 | Metric | meh | meh2 |
