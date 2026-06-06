@@ -28,6 +28,7 @@ struct LoadedPlugin {
     dir: PathBuf,
     script: PathBuf,
     manifest: PluginManifest,
+    sandbox: meh_rhai_engine::ScriptSandbox,
 }
 
 fn discover(config_dir: &Path) -> Vec<LoadedPlugin> {
@@ -79,10 +80,16 @@ fn discover(config_dir: &Path) -> Vec<LoadedPlugin> {
                 manifest.version,
                 manifest.vars.len()
             );
+            let sandbox = meh_rhai_engine::ScriptSandbox::for_plugin(
+                &dir,
+                manifest.permissions.allow_shell,
+                &manifest.permissions.read_files,
+            );
             plugins.push(LoadedPlugin {
                 dir,
                 script: script_path,
                 manifest,
+                sandbox,
             });
         }
     }
@@ -139,6 +146,7 @@ pub fn start_plugins(
                     script_path: plugin.script.clone(),
                     fn_name: w.fn_name.clone(),
                     default_watch: w.default_watch.clone(),
+                    sandbox: plugin.sandbox.clone(),
                 },
             );
         }
@@ -166,8 +174,9 @@ pub fn start_plugins(
             let sd2 = shutdown.resubscribe();
             let wo2 = windows_open.clone();
 
+            let sandbox = plugin.sandbox.clone();
             tokio::spawn(run_plugin_var(
-                script, plugin_dir, fn_name, var_name, interval, tx2, sd2, wo2,
+                script, plugin_dir, fn_name, var_name, interval, tx2, sd2, wo2, sandbox,
             ));
         }
     }
@@ -249,6 +258,7 @@ async fn run_plugin_var(
     tx: VarTx,
     mut shutdown: tokio::sync::broadcast::Receiver<()>,
     windows_open: Arc<AtomicBool>,
+    sandbox: meh_rhai_engine::ScriptSandbox,
 ) {
     let Some(engine) = meh_rhai_engine::global() else {
         tracing::warn!("plugin var {}: rhai engine not initialised", var_name);
@@ -257,7 +267,17 @@ async fn run_plugin_var(
 
     // Initial fetch — always runs regardless of windows_open so var_state is
     // populated before the first window opens (same behaviour as defpoll).
-    call_and_send(&engine, &script, &plugin_dir, &fn_name, &var_name, &tx).await;
+    let mut last = call_and_send(
+        &engine,
+        &script,
+        &plugin_dir,
+        &fn_name,
+        &var_name,
+        &tx,
+        None,
+        Some(sandbox.clone()),
+    )
+    .await;
 
     let mut timer = tokio::time::interval(interval);
     timer.tick().await; // skip the first immediate tick
@@ -269,7 +289,17 @@ async fn run_plugin_var(
                 if !windows_open.load(Ordering::Relaxed) {
                     continue;
                 }
-                call_and_send(&engine, &script, &plugin_dir, &fn_name, &var_name, &tx).await;
+                last = call_and_send(
+                    &engine,
+                    &script,
+                    &plugin_dir,
+                    &fn_name,
+                    &var_name,
+                    &tx,
+                    last,
+                    Some(sandbox.clone()),
+                )
+                .await;
             }
         }
     }
@@ -282,20 +312,35 @@ async fn call_and_send(
     fn_name: &str,
     var_name: &VarName,
     tx: &VarTx,
-) {
+    last: Option<String>,
+    sandbox: Option<meh_rhai_engine::ScriptSandbox>,
+) -> Option<String> {
     let engine = engine.clone();
     let script = script.to_path_buf();
     let plugin_dir = plugin_dir.to_path_buf();
     let fn_name = fn_name.to_string();
 
-    let result =
-        tokio::task::spawn_blocking(move || engine.call_fn(&script, &plugin_dir, &fn_name)).await;
+    let result = tokio::task::spawn_blocking(move || {
+        engine.call_fn_sandboxed(&script, &plugin_dir, &fn_name, sandbox)
+    })
+    .await;
 
     match result {
         Ok(Ok(val)) => {
-            let _ = tx.send((var_name.clone(), DynVal::from_string(val)));
+            if last.as_deref() != Some(&val) {
+                let _ = tx.send((var_name.clone(), DynVal::from_string(val.clone())));
+                Some(val)
+            } else {
+                last
+            }
         }
-        Ok(Err(e)) => tracing::error!("plugin var {}: {}", var_name, e),
-        Err(e) => tracing::error!("plugin var {}: task panicked: {}", var_name, e),
+        Ok(Err(e)) => {
+            tracing::error!("plugin var {}: {}", var_name, e);
+            last
+        }
+        Err(e) => {
+            tracing::error!("plugin var {}: task panicked: {}", var_name, e);
+            last
+        }
     }
 }

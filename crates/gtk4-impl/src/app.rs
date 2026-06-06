@@ -200,8 +200,7 @@ impl App {
             .clone();
 
         let vars = &self.config.var_state.vars;
-        let defs = &self.config.yuck.widget_definitions;
-        let ctx = EvalCtx::new(vars, defs);
+        let ctx = EvalCtx::new(vars, self.config.widget_defs.clone());
 
         let was_empty = self.open_windows.is_empty();
         let live = window::build_live_window(&win_def, &ctx, monitor)?;
@@ -228,6 +227,7 @@ impl App {
         if self.open_windows.is_empty() {
             self.windows_open.store(false, Ordering::Relaxed);
             self.window_closed.notify_waiters();
+            trim_heap();
         }
         if closed {
             // The closed popup's widget tree + decoded pixbufs have just been
@@ -357,10 +357,13 @@ impl App {
         let mut changed: HashSet<VarName> = HashSet::with_capacity(vars.len());
         for (k, v) in vars {
             let name = VarName(k.clone());
-            changed.insert(name.clone());
-            self.config.var_state.set(name, DynVal::from_string(v.clone()));
+            if self.config.var_state.set(name.clone(), DynVal::from_string(v.clone())) {
+                changed.insert(name);
+            }
         }
-        self.update_bindings(&changed);
+        if !changed.is_empty() {
+            self.update_bindings(&changed);
+        }
     }
 
     pub fn handle_cmd(&mut self, cmd: Cmd) {
@@ -429,11 +432,15 @@ impl App {
                 let _ = resp.send(IpcResponse::ok(names));
             }
             Cmd::SetVarBatch { vars } => {
-                let changed: HashSet<VarName> = vars.keys().cloned().collect();
+                let mut changed: HashSet<VarName> = HashSet::with_capacity(vars.len());
                 for (name, val) in vars {
-                    self.config.var_state.set(name, val);
+                    if self.config.var_state.set(name.clone(), val) {
+                        changed.insert(name);
+                    }
                 }
-                self.update_bindings(&changed);
+                if !changed.is_empty() {
+                    self.update_bindings(&changed);
+                }
             }
             Cmd::MonitorsChanged => {
                 self.handle_monitors_changed();
@@ -456,7 +463,7 @@ use gtk4::gdk;
 /// that as "dark-mode detection not available".
 #[cfg(feature = "animations")]
 pub fn init_platform() -> Option<bool> {
-    crate::ensure_adw_init();
+    crate::widgets::ensure_adw_init();
     Some(libadwaita::StyleManager::default().is_dark())
 }
 
@@ -558,7 +565,7 @@ fn ir_hash(name: &str, config: &MehConfig) -> u64 {
     let mut deps = BTreeMap::new();
     collect_deps(
         &win_def.widget,
-        &config.yuck.widget_definitions,
+        config.widget_defs.as_ref(),
         &mut visited,
         &mut deps,
     );

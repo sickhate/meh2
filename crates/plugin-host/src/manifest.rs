@@ -53,11 +53,11 @@ pub enum VarKind {
 
 #[derive(serde::Deserialize, Debug, Clone, Default)]
 pub struct Permissions {
-    /// File paths the plugin may read via `read_file()`. Not yet enforced —
-    /// reserved for future path-allowlist sandboxing.
+    /// File paths the plugin may read via `read_file()` / `read_or()`.
+    /// The plugin directory is always allowed; list extra paths here.
     #[serde(default)]
     pub read_files: Vec<String>,
-    /// Whether the plugin may call `run_shell()`. Not yet enforced.
+    /// Whether the plugin may call `run_shell()`. Defaults to `false`.
     #[serde(default)]
     pub allow_shell: bool,
     /// Whether the plugin may call `write_cache()`. Informational only —

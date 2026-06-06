@@ -11,7 +11,7 @@ use std::{
 
 use anyhow::Result;
 use eww_shared_util::VarName;
-use meh_core::{IpcCmd, IpcResponse, MehConfig, MehPaths, ipc_read, ipc_write};
+use meh_core::{IpcCmd, IpcResponse, MehConfig, MehPaths, ipc_read_request, ipc_write_reply};
 use simplexpr::dynval::DynVal;
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -71,13 +71,10 @@ pub fn run(paths: MehPaths, daemonize: bool) -> Result<()> {
     // Returns the initial dark-mode state so we can pre-populate MEH_DARK.
     let initial_dark = meh_gtk4::init_platform();
 
-    let mut config = match MehConfig::load(&paths) {
-        Ok(c) => c,
-        Err(e) => {
-            tracing::error!("Failed to load config: {}", e);
-            MehConfig::default()
-        }
-    };
+    let mut config = MehConfig::load(&paths).map_err(|e| {
+        tracing::error!("Failed to load config: {}", e);
+        e
+    })?;
 
     // Inject built-in system vars so they are available from the first window open.
     if let Some(is_dark) = initial_dark {
@@ -121,8 +118,8 @@ pub fn run(paths: MehPaths, daemonize: bool) -> Result<()> {
         .spawn(move || {
             let rt = tokio::runtime::Builder::new_multi_thread()
                 .thread_name("meh-tokio")
-                .worker_threads(2)
-                .max_blocking_threads(16)
+                .worker_threads(1)
+                .max_blocking_threads(8)
                 .enable_all()
                 .build()
                 .expect("tokio runtime");
@@ -324,7 +321,7 @@ async fn run_ipc_server(
 async fn handle_connection(stream: tokio::net::UnixStream, cmd_tx: UnboundedSender<meh_gtk4::Cmd>) {
     let (mut reader, mut writer) = tokio::io::split(stream);
 
-    let cmd: IpcCmd = match ipc_read(&mut reader).await {
+    let cmd: IpcCmd = match ipc_read_request(&mut reader).await {
         Ok(c) => c,
         Err(e) => {
             tracing::warn!("IPC read error: {}", e);
@@ -334,7 +331,7 @@ async fn handle_connection(stream: tokio::net::UnixStream, cmd_tx: UnboundedSend
 
     let resp = dispatch_cmd(cmd, &cmd_tx).await;
 
-    if let Err(e) = ipc_write(&mut writer, &resp).await {
+    if let Err(e) = ipc_write_reply(&mut writer, &resp).await {
         tracing::warn!("IPC write error: {}", e);
     }
 }

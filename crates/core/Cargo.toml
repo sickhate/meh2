@@ -23,3 +23,6 @@ grass              = { workspace = true }
 tracing            = { workspace = true }
 nix                = { workspace = true }
 codespan-reporting = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "io-util", "net"] }

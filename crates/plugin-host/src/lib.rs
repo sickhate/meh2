@@ -4,7 +4,8 @@
 //! Plugins live in `~/.config/meh2/plugins/<name>/` or
 //! `~/.local/share/meh2/plugins/<name>/`. Each plugin directory must contain:
 //!
-//! - `plugin.toml` — manifest declaring the plugin's name, version, and vars.
+//! - `plugin.toml` — manifest declaring the plugin's name, version, vars, and
+//!   `[permissions]` sandbox policy (enforced at runtime).
 //! - `main.rhai`   — Rhai script exporting `fn get_<VARNAME>() -> String` for
 //!   each declared var.
 //!

@@ -14,12 +14,26 @@ enum IconError {
     NotAvailable,
 }
 
+/// Maximum width/height for SNI pixmap icons (pixels per side).
+const MAX_ICON_DIM: i32 = 256;
+/// Reject pixmap buffers larger than this (256×256 RGBA).
+const MAX_ICON_BYTES: usize = 256 * 256 * 4;
+
 /// Convert ARGB32 SNI pixmap bytes to RGBA32 and pick the best-sized variant.
 fn icon_from_pixmaps(pixmaps: Vec<(i32, i32, Vec<u8>)>, size: i32) -> Option<IconResult> {
+    let capped = size.min(MAX_ICON_DIM);
     pixmaps
         .into_iter()
+        .filter(|(w, h, data)| {
+            *w > 0
+                && *h > 0
+                && *w <= MAX_ICON_DIM
+                && *h <= MAX_ICON_DIM
+                && data.len() <= MAX_ICON_BYTES
+                && data.len() == (*w as usize) * (*h as usize) * 4
+        })
         .max_by(|(w1, h1, _), (w2, h2, _)| {
-            let a = size * size;
+            let a = capped * capped;
             let a1 = w1 * h1;
             let a2 = w2 * h2;
             match (a1 >= a, a2 >= a) {

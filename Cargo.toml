@@ -36,8 +36,8 @@ gtk4             = { version = "0.10.3", features = ["v4_14"] }
 gtk4-layer-shell = { version = "0.6.3" }
 libadwaita       = { version = "0.8", features = ["v1_3"], default-features = false }
 
-# Async
-tokio      = { version = "1.39.2", features = ["full"] }
+# Async (explicit feature set — not `full`; see daemon runtime builder)
+tokio      = { version = "1.39.2", features = ["rt-multi-thread", "macros", "sync", "time", "io-util", "net", "fs", "process"] }
 futures    = { version = "0.3.30" }
 
 # Errors / logging

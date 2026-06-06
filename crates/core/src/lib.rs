@@ -1,10 +1,11 @@
 // GPL-3.0-or-later
-//! Paths, variable state, IPC types, and yuck config loading for meh.
+//! Paths, variable state, versioned IPC types, and yuck config loading for meh2.
 
 use std::{
     collections::HashMap,
     hash::{DefaultHasher, Hash, Hasher},
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 use anyhow::{Context, Result, bail};
@@ -144,8 +145,15 @@ impl VarState {
     pub fn get(&self, name: &VarName) -> Option<&DynVal> {
         self.vars.get(name)
     }
-    pub fn set(&mut self, name: VarName, value: DynVal) {
-        self.vars.insert(name, value);
+    /// Returns `true` when the stored value changed.
+    pub fn set(&mut self, name: VarName, value: DynVal) -> bool {
+        match self.vars.get(&name) {
+            Some(old) if old == &value => false,
+            _ => {
+                self.vars.insert(name, value);
+                true
+            }
+        }
     }
 }
 
@@ -154,13 +162,13 @@ impl VarState {
 pub struct EvalCtx<'a> {
     pub scope: HashMap<VarName, DynVal>,
     pub global_vars: &'a HashMap<VarName, DynVal>,
-    pub widget_defs: &'a HashMap<String, WidgetDefinition>,
+    pub widget_defs: Arc<HashMap<String, WidgetDefinition>>,
 }
 
 impl<'a> EvalCtx<'a> {
     pub fn new(
         global_vars: &'a HashMap<VarName, DynVal>,
-        widget_defs: &'a HashMap<String, WidgetDefinition>,
+        widget_defs: Arc<HashMap<String, WidgetDefinition>>,
     ) -> Self {
         Self {
             scope: HashMap::new(),
@@ -220,7 +228,7 @@ impl<'a> EvalCtx<'a> {
         EvalCtx {
             scope,
             global_vars: self.global_vars,
-            widget_defs: self.widget_defs,
+            widget_defs: self.widget_defs.clone(),
         }
     }
 }
@@ -230,6 +238,8 @@ impl<'a> EvalCtx<'a> {
 #[derive(Debug, Clone)]
 pub struct MehConfig {
     pub yuck: Config,
+    /// Shared widget definitions — `Arc` so loop/rhai bindings don't clone the map.
+    pub widget_defs: Arc<HashMap<String, WidgetDefinition>>,
     pub var_state: VarState,
 }
 
@@ -242,8 +252,18 @@ impl Default for MehConfig {
                 var_definitions: Default::default(),
                 script_vars: Default::default(),
             },
+            widget_defs: Arc::new(HashMap::new()),
             var_state: VarState::new(),
         }
+    }
+}
+
+fn finalize_config(mut yuck: Config, var_state: VarState) -> MehConfig {
+    let widget_defs = Arc::new(std::mem::take(&mut yuck.widget_definitions));
+    MehConfig {
+        yuck,
+        widget_defs,
+        var_state,
     }
 }
 
@@ -265,7 +285,7 @@ impl MehConfig {
                 for (name, def) in &yuck.script_vars {
                     var_state.set(name.clone(), def.initial_value());
                 }
-                return Ok(Self { yuck, var_state });
+                return Ok(finalize_config(yuck, var_state));
             }
             #[cfg(not(feature = "builtin-default-config"))]
             {
@@ -288,7 +308,7 @@ impl MehConfig {
             var_state.set(name.clone(), def.initial_value());
         }
 
-        Ok(Self { yuck, var_state })
+        Ok(finalize_config(yuck, var_state))
     }
 }
 
@@ -367,7 +387,22 @@ pub fn compile_css(paths: &MehPaths) -> Option<String> {
 
 // ── IPC types ─────────────────────────────────────────────────────────────────
 
+/// Wire protocol version. Bump when `IpcCmd` / `IpcResponse` layout changes.
+pub const IPC_PROTOCOL_VERSION: u32 = 1;
+
 #[derive(Debug, Serialize, Deserialize)]
+pub struct IpcRequest {
+    pub version: u32,
+    pub cmd: IpcCmd,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct IpcReply {
+    pub version: u32,
+    pub resp: IpcResponse,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum IpcCmd {
     Ping,
     Open {
@@ -391,7 +426,7 @@ pub enum IpcCmd {
     Kill,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum IpcResponse {
     Ok(String),
     Err(String),
@@ -420,12 +455,72 @@ pub async fn ipc_write<T: Serialize>(
     Ok(())
 }
 
+pub async fn ipc_write_request(
+    stream: &mut (impl tokio::io::AsyncWriteExt + Unpin),
+    cmd: &IpcCmd,
+) -> Result<()> {
+    ipc_write(
+        stream,
+        &IpcRequest {
+            version: IPC_PROTOCOL_VERSION,
+            cmd: cmd.clone(),
+        },
+    )
+    .await
+}
+
+pub async fn ipc_write_reply(
+    stream: &mut (impl tokio::io::AsyncWriteExt + Unpin),
+    resp: &IpcResponse,
+) -> Result<()> {
+    ipc_write(
+        stream,
+        &IpcReply {
+            version: IPC_PROTOCOL_VERSION,
+            resp: resp.clone(),
+        },
+    )
+    .await
+}
+
+pub async fn ipc_read_request(
+    stream: &mut (impl tokio::io::AsyncReadExt + Unpin),
+) -> Result<IpcCmd> {
+    let req: IpcRequest = ipc_read(stream).await?;
+    if req.version != IPC_PROTOCOL_VERSION {
+        bail!(
+            "IPC protocol mismatch: client v{} daemon v{}",
+            req.version,
+            IPC_PROTOCOL_VERSION
+        );
+    }
+    Ok(req.cmd)
+}
+
+pub async fn ipc_read_reply(
+    stream: &mut (impl tokio::io::AsyncReadExt + Unpin),
+) -> Result<IpcResponse> {
+    let reply: IpcReply = ipc_read(stream).await?;
+    if reply.version != IPC_PROTOCOL_VERSION {
+        bail!(
+            "IPC protocol mismatch: daemon v{} client v{}",
+            IPC_PROTOCOL_VERSION,
+            reply.version
+        );
+    }
+    Ok(reply.resp)
+}
+
 pub async fn ipc_read<T: for<'de> Deserialize<'de>>(
     stream: &mut (impl tokio::io::AsyncReadExt + Unpin),
 ) -> Result<T> {
+    const MAX_MSG: usize = 16 * 1024 * 1024;
     let mut len_buf = [0u8; 4];
     stream.read_exact(&mut len_buf).await?;
     let len = u32::from_be_bytes(len_buf) as usize;
+    if len > MAX_MSG {
+        bail!("IPC message too large: {} bytes (max {})", len, MAX_MSG);
+    }
     let mut buf = vec![0u8; len];
     stream.read_exact(&mut buf).await?;
     Ok(bincode::deserialize(&buf)?)
@@ -437,7 +532,6 @@ pub async fn send_ipc_cmd(socket: &Path, cmd: &IpcCmd) -> Result<IpcResponse> {
         .await
         .with_context(|| format!("Cannot connect to meh socket {}", socket.display()))?;
     let (mut reader, mut writer) = tokio::io::split(stream);
-    ipc_write(&mut writer, cmd).await?;
-    let resp = ipc_read::<IpcResponse>(&mut reader).await?;
-    Ok(resp)
+    ipc_write_request(&mut writer, cmd).await?;
+    ipc_read_reply(&mut reader).await
 }

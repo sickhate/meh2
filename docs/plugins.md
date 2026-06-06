@@ -50,8 +50,8 @@ interval = 5
 initial  = "0 MB"
 
 [permissions]
-read_files  = ["/proc/stat", "/proc/meminfo"]  # informational; not yet enforced
-allow_shell = false
+read_files  = ["/proc/stat", "/proc/meminfo"]  # extra paths beyond the plugin dir
+allow_shell = false                            # must be true to use run_shell()
 ```
 
 ### Fields
@@ -66,9 +66,23 @@ allow_shell = false
 | `vars[].type` | yes | `"poll"` (only option in Phase 3) |
 | `vars[].interval` | no | Poll interval in seconds. Default: 60 |
 | `vars[].initial` | no | Initial value before first tick. Default: `""` |
-| `permissions.read_files` | no | File paths the script reads (informational) |
-| `permissions.allow_shell` | no | Whether the script calls `run_shell()` (informational) |
-| `permissions.write_cache` | no | Whether the script calls `write_cache()` (informational) |
+| `permissions.read_files` | no | Extra file paths `read_file()` / `read_or()` may access. The plugin directory is always allowed. |
+| `permissions.allow_shell` | no | Must be `true` for `run_shell()` to work. Default: `false`. |
+| `permissions.write_cache` | no | Informational — `write_cache()` is always confined to `~/.cache/meh2/` |
+
+## Security sandbox
+
+Plugin scripts run with enforced restrictions (config scripts and user
+`(rhai-widget)` files are **not** sandboxed):
+
+| Permission | Default | Effect |
+|---|---|---|
+| Plugin directory | always allowed | `read_file()` / `read_or()` can read files under the plugin dir |
+| `read_files` | `[]` | Extra absolute or plugin-relative paths that may be read |
+| `allow_shell` | `false` | When false, `run_shell()` returns `""` and logs a warning |
+| `write_cache` | n/a | Always allowed but confined to `~/.cache/meh2/<key>` |
+
+Poll and listen vars from plugins inherit the same sandbox on every tick.
 
 ## Writing the Rhai script (`main.rhai`)
 
@@ -96,7 +110,7 @@ The full meh2 Rhai API is available in plugins:
 | `read_file(path)` | string | Read and trim a file. `""` if not found. |
 | `read_or(path, default)` | string | Like `read_file` but returns `default` if the file is missing or empty. |
 | `write_cache(key, val)` | bool | Write `val` to `~/.cache/meh2/<key>`. Key must be `[a-zA-Z0-9_-]`. |
-| `run_shell(cmd)` | string | Run `sh -c cmd`, return stdout. |
+| `run_shell(cmd)` | string | Run `sh -c cmd`, return stdout. **Requires `allow_shell = true` in plugin.toml.** |
 | `parse_int(s)` | i64 | Parse string to integer, 0 on failure. |
 | `parse_float(s)` | f64 | Parse string to float, 0.0 on failure. |
 | `env_var(name)` | string | Read env var, `""` if unset. |

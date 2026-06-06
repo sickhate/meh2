@@ -1,5 +1,5 @@
 // GPL-3.0-or-later
-//! meh — widget system for Wayland / GTK4
+//! meh2 — GTK4 Wayland widget system and status bar daemon
 
 use std::collections::HashMap;
 

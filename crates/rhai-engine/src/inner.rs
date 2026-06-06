@@ -10,6 +10,8 @@ use anyhow::Result;
 use once_cell::sync::OnceCell;
 use rhai::{AST, Dynamic, Engine, Scope};
 
+use crate::sandbox::{self, ScriptSandbox};
+
 static GLOBAL: OnceCell<Arc<RhaiEngine>> = OnceCell::new();
 
 /// Return the global engine, or `None` if `init()` has not been called yet.
@@ -64,6 +66,10 @@ impl RhaiEngine {
 
         // read_file(path) → string — reads and trims a file. Returns "" if not found.
         engine.register_fn("read_file", |path: &str| -> String {
+            if !sandbox::read_allowed(path) {
+                tracing::warn!("rhai read_file({path}): denied by plugin sandbox");
+                return String::new();
+            }
             match std::fs::read_to_string(path) {
                 Ok(s) => s.trim_end().to_string(),
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
@@ -77,6 +83,10 @@ impl RhaiEngine {
         // run_shell(cmd) → string — stdout of `sh -c cmd`.
         // Explicit opt-in; logged so users can see when scripts shell out.
         engine.register_fn("run_shell", |cmd: &str| -> String {
+            if !sandbox::shell_allowed() {
+                tracing::warn!("rhai run_shell({cmd}): denied by plugin sandbox");
+                return String::new();
+            }
             tracing::debug!("rhai run_shell: {cmd}");
             std::process::Command::new("sh")
                 .arg("-c")
@@ -107,6 +117,10 @@ impl RhaiEngine {
         // read_or(path, default) → string — like read_file but returns `default`
         // when the file is missing or empty. Useful for reading state flag files.
         engine.register_fn("read_or", |path: &str, default: &str| -> String {
+            if !sandbox::read_allowed(path) {
+                tracing::warn!("rhai read_or({path}): denied by plugin sandbox");
+                return default.to_string();
+            }
             let content = std::fs::read_to_string(path)
                 .map(|s| s.trim_end().to_string())
                 .unwrap_or_default();
@@ -247,6 +261,21 @@ impl RhaiEngine {
     ///
     /// The compiled AST is cached. Per-call cost is a `Scope` allocation + `call_fn`.
     pub fn call_fn(&self, path: &Path, config_dir: &Path, fn_name: &str) -> Result<String> {
+        self.call_fn_sandboxed(path, config_dir, fn_name, None)
+    }
+
+    /// Like [`call_fn`] but applies a plugin sandbox for the duration of the call.
+    pub fn call_fn_sandboxed(
+        &self,
+        path: &Path,
+        config_dir: &Path,
+        fn_name: &str,
+        sandbox: Option<ScriptSandbox>,
+    ) -> Result<String> {
+        sandbox::with_sandbox(sandbox, || self.call_fn_inner(path, config_dir, fn_name))
+    }
+
+    fn call_fn_inner(&self, path: &Path, config_dir: &Path, fn_name: &str) -> Result<String> {
         let abs = if path.is_absolute() {
             path.to_path_buf()
         } else {
@@ -273,6 +302,29 @@ impl RhaiEngine {
     /// reference watched var values directly (e.g. `CPU`, `MEM`) without reading
     /// cache files.  Variable names must be valid Rhai identifiers.
     pub fn call_fn_as_widget_data(
+        &self,
+        path: &Path,
+        config_dir: &Path,
+        fn_name: &str,
+        vars: &std::collections::HashMap<String, String>,
+    ) -> Result<crate::RhaiWidgetData> {
+        self.call_fn_as_widget_data_sandboxed(path, config_dir, fn_name, vars, None)
+    }
+
+    pub fn call_fn_as_widget_data_sandboxed(
+        &self,
+        path: &Path,
+        config_dir: &Path,
+        fn_name: &str,
+        vars: &std::collections::HashMap<String, String>,
+        sandbox: Option<ScriptSandbox>,
+    ) -> Result<crate::RhaiWidgetData> {
+        sandbox::with_sandbox(sandbox, || {
+            self.call_fn_as_widget_data_inner(path, config_dir, fn_name, vars)
+        })
+    }
+
+    fn call_fn_as_widget_data_inner(
         &self,
         path: &Path,
         config_dir: &Path,

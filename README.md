@@ -16,14 +16,16 @@
 - **Python-free polling** — `json_decode`, string ops, and `run_shell` cover every use case; no Python interpreter in the poll path.
 - **Reactive bindings** — variable updates push only to affected widgets. No full tree rebuilds.
 - **Granular hot reload** — `meh2 reload` rebuilds only windows whose definition changed; unchanged windows keep their state.
-- **Poll gating** — `defpoll` subprocesses pause when no windows are open. Idle daemon sits at ~0.17% CPU.
+- **Poll gating** — `defpoll` and `deflisten` subprocesses pause when no windows are open. Idle daemon sits at ~0.17% CPU.
 - **`defsubscribe`** — inotify file watchers (with tilde expansion + atomic-write support) and DBus property watchers. Zero-cost reactive sources — no polling, no subprocess.
-- **Deflisten process groups** — `deflisten` subprocesses run for the daemon's lifetime; SIGTERM on shutdown reaches grandchildren (inotifywait, playerctl --follow, nmcli monitor, etc.).
+- **Deflisten process groups** — `deflisten` subprocesses run while windows are open (gated like defpoll when the bar is hidden); SIGTERM on shutdown reaches grandchildren (inotifywait, playerctl --follow, nmcli monitor, etc.).
 - **Declarative animations** — `AdwTimedAnimation` on `progress` values and opacity. Interruptible, respects system reduced-motion.
 - **Native app launcher** — `(launcher)` widget: instant `gio::AppInfo` search, PATH executable autocomplete, keyboard nav, click-to-launch.
 - **System tray** — StatusNotifierItem/StatusNotifierHost. Opt-in via `systray` Cargo feature.
 - **`(shader)` widget** — GLSL fragment shaders via `GtkGLArea`. Full profile only.
-- **mimalloc allocator** — returns freed memory to the OS, keeping resident memory flat over long uptimes.
+- **Heap trimming** — popups are destroyed with `gtk_window_destroy()` and `malloc_trim(0)` returns freed image memory to the OS, keeping resident memory flat over long uptimes.
+- **Plugin sandbox** — `plugin.toml` permissions enforce file read allowlists and opt-in `run_shell()`.
+- **Versioned IPC** — CLI/daemon protocol v1; mismatched versions fail with a clear error.
 - **Three build profiles**: `minimal`, `default` (systray + dbus + animations + rhai + plugins), `full` (+ shader).
 
 ---
@@ -36,11 +38,13 @@
 | Idle CPU (1s clock) | ~0.35% | ~0.35% |
 | Poll latency (shell) | ~1.3–1.8 ms | ~1.3–1.8 ms |
 | Poll latency (Rhai) | N/A | < 1 ms (no fork) |
-| Python in poll path | Required | **None* |
+| Python in poll path | Required | **None** |
 | Persistent subprocess RSS | ~5–6 MB each | None when using Rhai |
 | Rhai engine overhead | N/A | ~2–4 MB RSS |
 | Resident memory (bar, cairo renderer) | — | ~28 MB, flat |
-| Poll gating | Windows-closed pause | Same |
+| Poll gating | Windows-closed pause | `defpoll` + `deflisten` pause |
+| Listen subprocess RSS | ~5–6 MB each (always on) | Gated when bar hidden |
+| Plugin permissions | N/A | Enforced sandbox in `plugin.toml` |
 
 > **Memory.** Popups are torn down with `gtk_window_destroy()` (not `close()`,
 > which only hides them and leaks the widget tree), and a `malloc_trim(0)` after
@@ -57,7 +61,7 @@
 |---|---|---|
 | Poll sources | Shell scripts only | `.rhai` files + `rhai:` inline + shell |
 | Event handlers | Shell commands | `.rhai` files + `rhai:` inline + shell |
-| Plugin system | None | Rhai plugins in `~/.config/meh2/plugins/` |
+| Plugin system | None | Rhai plugins in `~/.config/meh2/plugins/` (sandboxed) |
 | Widget builders | `defwidget` in yuck only | `(rhai-widget)` + plugin-registered widgets |
 | File watching | `defsubscribe :inotify` | `defsubscribe :file` with tilde expansion + atomic-write support |
 | Python in poll path | Required for complex scripts | **Zero** — json_decode, string ops, run_shell cover every use case |
@@ -68,7 +72,9 @@
 
 ## Rhai API
 
-Scripts have access to a sandboxed API (no filesystem/network unless explicitly called):
+Scripts have access to a sandboxed API. **Config scripts** (`defpoll`, event
+handlers, user `(rhai-widget)`) are unrestricted. **Plugin scripts** are limited
+by `[permissions]` in `plugin.toml` (see [docs/plugins.md](docs/plugins.md)).
 
 ```
 read_file(path)          → string    silent "" on NotFound
@@ -202,6 +208,10 @@ The watcher handles missing files (watches parent dir), atomic writes (rm+recrea
 name    = "sysinfo"
 version = "0.1.0"
 
+[permissions]
+read_files  = ["/proc/stat", "/proc/meminfo"]
+allow_shell = false
+
 [[vars]]
 name     = "PLUGIN_CPU"
 interval = "3s"
@@ -226,6 +236,27 @@ fn render_sysinfo_pill() #{
 ```
 
 Use in yuck: `(sysinfo-pill)` — no `:src` or `:fn` needed.
+
+---
+
+## Project layout
+
+```
+crates/
+├── cli/           meh2 binary
+├── daemon/        lifecycle + IPC server
+├── core/          config, paths, IPC protocol (v1)
+├── gtk4-impl/     GTK widgets — bindings.rs, builder.rs, widgets.rs, runtime.rs
+├── script-vars/   defpoll / deflisten / defsubscribe
+├── rhai-engine/   Rhai runtime + plugin sandbox
+├── plugin-host/   plugin discovery + poll tasks
+├── notifier-host/ system tray (systray feature)
+├── yuck/          config language (MIT/eww)
+└── simplexpr/     expression evaluator (MIT/eww)
+docs/plugins.md    plugin authoring + permissions
+```
+
+Run tests: `cargo test --release --locked`
 
 ---
 

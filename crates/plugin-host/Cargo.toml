@@ -19,3 +19,6 @@ serde           = { workspace = true }
 toml            = "0.8"
 once_cell       = { workspace = true }
 notify          = { workspace = true }
+
+[dev-dependencies]
+meh_rhai_engine = { workspace = true }

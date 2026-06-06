@@ -5,7 +5,7 @@
 //! WidgetUse, and renders it. When `:watch` vars change, the subtree is
 //! transparently rebuilt in-place.
 
-use std::{collections::HashMap, path::PathBuf};
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use anyhow::Result;
 use eww_shared_util::{AttrName, Span, VarName};
@@ -19,7 +19,8 @@ use yuck::config::{
 };
 use yuck::parser::ast::Ast;
 
-use crate::{AnyBinding, BINDING_COLLECTOR, CONFIG_DIR, build_widget};
+use crate::{AnyBinding, BINDING_COLLECTOR, build_widget};
+use crate::runtime::CONFIG_DIR;
 
 // ── Reactive binding ──────────────────────────────────────────────────────────
 
@@ -29,7 +30,7 @@ pub struct RhaiWidgetBinding {
     /// watched-var values on every rebuild so plugins see both.
     pub(crate) static_attrs: HashMap<String, String>,
     pub(crate) scope: HashMap<VarName, DynVal>,
-    pub(crate) widget_defs: HashMap<String, WidgetDefinition>,
+    pub(crate) widget_defs: Arc<HashMap<String, WidgetDefinition>>,
     pub(crate) script_path: PathBuf,
     pub(crate) fn_name: String,
     pub(crate) container: gtk4::Box,
@@ -99,7 +100,7 @@ impl RhaiWidgetBinding {
         let ctx = EvalCtx {
             scope: self.scope.clone(),
             global_vars,
-            widget_defs: &self.widget_defs,
+            widget_defs: self.widget_defs.clone(),
         };
 
         match build_widget(&wu, &ctx) {
@@ -275,8 +276,13 @@ pub fn build_rhai_defwidget(
         scope_vars.insert(var.0.clone(), val);
     }
 
-    let data =
-        engine.call_fn_as_widget_data(&def.script_path, config_dir, &def.fn_name, &scope_vars)?;
+    let data = engine.call_fn_as_widget_data_sandboxed(
+        &def.script_path,
+        config_dir,
+        &def.fn_name,
+        &scope_vars,
+        Some(def.sandbox.clone()),
+    )?;
     let inner_wu = rhai_data_to_widget_use(data, wu.span);
     let inner = build_widget(&inner_wu, ctx)?;
 

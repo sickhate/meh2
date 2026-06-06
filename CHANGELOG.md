@@ -5,16 +5,47 @@ All notable changes to meh2 are documented here.
 
 ## meh2 0.1.0 (unreleased)
 
+### Added
+
+- **IPC protocol versioning** — `IpcRequest` / `IpcReply` envelopes with
+  `IPC_PROTOCOL_VERSION = 1`. CLI and daemon must match; mismatch returns a
+  clear error. 16 MB max message size on read.
+- **Plugin sandbox enforcement** — `plugin.toml` `[permissions]` is now
+  enforced: `allow_shell` gates `run_shell()`, `read_files` + plugin dir gate
+  `read_file()` / `read_or()`. Config scripts and user `(rhai-widget)` remain
+  unrestricted.
+- **Integration tests** — IPC round-trip, `VarState` change detection, binding
+  `intersects()` / scoped eval, plugin sandbox policy.
+- **`gtk4-impl` module split** — monolithic `lib.rs` split into `bindings.rs`,
+  `builder.rs`, `widgets.rs`, and `runtime.rs`.
+
+### Changed
+
+- **Memory / resource optimisations**
+  - Shared `Arc<HashMap>` for widget definitions (loop/rhai bindings no longer
+    clone the full defwidget table).
+  - `VarState::set()` returns whether the value changed; binding updates skipped
+    when unchanged.
+  - `deflisten` gating — shell and Rhai listen vars pause when no windows are
+    open (same model as `defpoll`).
+  - Plugin poll dedup — skip channel send when output unchanged.
+  - Tokio runtime trimmed to explicit feature set; daemon uses 1 worker + 8
+    blocking threads.
+  - Systray pixmap icons capped at 256×256 (256 KB RGBA max).
+- **Config load** — daemon exits on yuck parse error instead of falling back to
+  an empty default config.
+- **Tokio workspace dep** — `features = ["full"]` replaced with explicit
+  sub-features actually used by the daemon.
+
 ### Fixed
+
 - **binding update per-tick speed** — Added `var_refs` cache to `Binding` and
-   `LoopBinding` so `collect_var_refs()` is called once at build time instead of
-   every 33ms tick. Added `intersects()` check so bindings whose referenced vars
-   haven't changed are skipped entirely during `update_bindings()`. This eliminates
-   unnecessary eval, HashMap builds, and string clones on every CAVA_BARS tick.
+  `LoopBinding` so `collect_var_refs()` is called once at build time instead of
+  every 33ms tick. Added `intersects()` check so bindings whose referenced vars
+  haven't changed are skipped entirely during `update_bindings()`.
 - **notification history file** — Added `MAX_NOTIFS=50` cap to `notifications.sh`
-   to prevent unbounded growth of `~/.local/share/meh/notifications.json`.
-
-
+  to prevent unbounded growth of `~/.local/share/meh/notifications.json`.
+- **README** — removed stale mimalloc claim; documents heap trimming instead.
 
 ## [Unreleased]
 
@@ -60,7 +91,7 @@ An earlier attempt used the mimalloc allocator, but that only masked the leak
 the real fix above.
 - **`Arc<AST>` Rhai cache** — `get_or_compile()` previously returned `AST` by value, causing a deep clone of the full syntax tree on every poll tick. Changed `cache` to `HashMap<PathBuf, Arc<AST>>`; callers share a reference-counted pointer (`Arc::clone` = one atomic increment). Eliminates the largest per-tick allocation in the Rhai engine path.
 - **Poll value deduplication** — `run_poll` now tracks `last: Option<String>` and skips the `tx.send` + `update_bindings` call when the script output is identical to the previous tick. Stable polls (stopped player, VPN off, no torrents, etc.) now produce zero channel writes and zero GTK work. Cuts `SetVarBatch` traffic by 70–90 % under typical idle conditions.
-- **Tokio thread limits** — runtime capped at `worker_threads(2)` (bar is I/O-bound, not CPU-bound) and `max_blocking_threads(16)` (caps the pool that runs Rhai `spawn_blocking` tasks). Reduces per-thread stack overhead and heap fragmentation from thread-local allocator arenas.
+- **Tokio thread limits** — runtime capped at `worker_threads(1)` and `max_blocking_threads(8)` (bar is I/O-bound). Reduces per-thread stack overhead and heap fragmentation from thread-local allocator arenas.
 
 ### Runtime optimisations (2026-05-27)
 
@@ -94,7 +125,7 @@ the real fix above.
 
 #### Phase 3 — Plugin system
 - **Rhai plugin system** (`crates/plugin-host/`) — drop a directory into `~/.config/meh2/plugins/`
-- `plugin.toml` manifest: name, version, declared vars, file-access allowlist
+- `plugin.toml` manifest: name, version, declared vars, enforced file-access allowlist
 - Plugins contribute `defpoll`/`deflisten`-style vars to the bar
 - `meh2 reload` invalidates plugin AST cache; adding/removing plugins requires daemon restart
 - **`examples/plugin-demo/`** — sysinfo plugin with `PLUGIN_CPU` and `PLUGIN_RAM` from `/proc`
@@ -181,7 +212,7 @@ Remaining Python file: `notif-focus.py` — onclick utility only, never polled.
 - **Theme switch freezes bar** — replaced daemon restart with `meh reload`
 - **GTK4 4.10 deprecation warnings** in `circular-progress` widget
 - **tooltip binding skipped when var not in scope** — `unwrap_or_default()` ensures binding is always registered
-- **deflisten subprocess leak** — listen vars run for daemon lifetime; subprocesses restart if they die
+- **deflisten subprocess leak** — listen vars gated when no windows open; subprocess killed via process group on close
 - **bar flicker on popup close** — `update_bindings()` instead of `rebuild_open_windows()`
 - **menus not closing on click-outside** — windows moved to `stacking "overlay"`
 - **deflisten process groups** — spawned with `.process_group(0)` for clean SIGTERM on shutdown

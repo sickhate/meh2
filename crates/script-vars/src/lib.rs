@@ -144,37 +144,56 @@ async fn run_listen(
     def: ListenScriptVar,
     tx: UnboundedSender<VarUpdate>,
     mut shutdown: tokio::sync::broadcast::Receiver<()>,
-    _windows_open: Arc<AtomicBool>,
-    _window_opened: Arc<Notify>,
-    _window_closed: Arc<Notify>,
+    windows_open: Arc<AtomicBool>,
+    window_opened: Arc<Notify>,
+    window_closed: Arc<Notify>,
     config_dir: PathBuf,
 ) {
     use tokio::io::{AsyncBufReadExt, BufReader};
 
     let _ = tx.send((def.name.clone(), def.initial_value.clone()));
 
-    // Rhai listen: poll-style loop — call the script on each tick and emit
-    // the return value. Not true streaming, but sufficient for data sources
-    // that don't need line-by-line output.
+    // Rhai listen: poll-style loop — gated like defpoll when no windows are open.
     if is_rhai_source(&def.command) {
+        let mut last: Option<String> = None;
+        if let Ok(out) = run_rhai(&def.command, &config_dir) {
+            let _ = tx.send((def.name.clone(), DynVal::from_string(out.clone())));
+            last = Some(out);
+        }
         let mut timer = tokio::time::interval(std::time::Duration::from_secs(1));
+        timer.tick().await;
         loop {
             tokio::select! {
                 _ = shutdown.recv() => return,
                 _ = timer.tick() => {
+                    if !windows_open.load(Ordering::Relaxed) {
+                        continue;
+                    }
                     match run_rhai(&def.command, &config_dir) {
-                        Ok(out) => { let _ = tx.send((def.name.clone(), DynVal::from_string(out))); }
-                        Err(e)  => tracing::warn!("listen var `{}` rhai error: {}", def.name, e),
+                        Ok(out) => {
+                            if last.as_deref() != Some(&out) {
+                                let _ = tx.send((def.name.clone(), DynVal::from_string(out.clone())));
+                                last = Some(out);
+                            }
+                        }
+                        Err(e) => tracing::warn!("listen var `{}` rhai error: {}", def.name, e),
                     }
                 }
             }
         }
     }
 
-    // Shell listen: long-running subprocess, emit each output line as a value.
-    // Killing and restarting on every window open/close causes subprocess
-    // accumulation; the subprocess is already cheap to keep alive.
+    // Shell listen: long-running subprocess while windows are open. When the last
+    // window closes the child (and its process group) is killed and restarted on
+    // the next open — same gating model as defpoll, without leaving orphans.
     loop {
+        while !windows_open.load(Ordering::Relaxed) {
+            tokio::select! {
+                _ = shutdown.recv() => return,
+                _ = window_opened.notified() => {}
+            }
+        }
+
         let mut child = match tokio::process::Command::new("sh")
             .arg("-c")
             .arg(&def.command)
@@ -187,7 +206,6 @@ async fn run_listen(
             Ok(c) => c,
             Err(e) => {
                 tracing::warn!("listen var `{}` spawn failed: {}", def.name, e);
-                // Back off before retrying so we don't spin on a bad command.
                 tokio::select! {
                     _ = shutdown.recv() => return,
                     _ = tokio::time::sleep(std::time::Duration::from_secs(5)) => {}
@@ -196,34 +214,47 @@ async fn run_listen(
             }
         };
 
-        let stdout = child.stdout.take().unwrap();
+        let stdout = child.stdout.take().expect("piped stdout");
         let mut lines = BufReader::new(stdout).lines();
+        let mut keep_running = true;
 
-        loop {
+        while keep_running {
             tokio::select! {
                 _ = shutdown.recv() => {
                     kill_group(&mut child);
                     let _ = child.kill().await;
                     return;
                 }
+                _ = window_closed.notified() => {
+                    if !windows_open.load(Ordering::Relaxed) {
+                        kill_group(&mut child);
+                        let _ = child.kill().await;
+                        let _ = child.wait().await;
+                        keep_running = false;
+                    }
+                }
                 line = lines.next_line() => {
                     match line {
-                        Ok(Some(l)) => { let _ = tx.send((def.name.clone(), DynVal::from_string(l))); }
+                        Ok(Some(l)) => {
+                            if windows_open.load(Ordering::Relaxed) {
+                                let _ = tx.send((def.name.clone(), DynVal::from_string(l)));
+                            }
+                        }
                         Ok(None) | Err(_) => {
-                            // Process exited — clean up and restart.
                             kill_group(&mut child);
                             let _ = child.wait().await;
-                            break;
+                            keep_running = false;
                         }
                     }
                 }
             }
         }
 
-        // Brief pause before restart to avoid spinning on a command that exits immediately.
-        tokio::select! {
-            _ = shutdown.recv() => return,
-            _ = tokio::time::sleep(std::time::Duration::from_millis(500)) => {}
+        if windows_open.load(Ordering::Relaxed) {
+            tokio::select! {
+                _ = shutdown.recv() => return,
+                _ = tokio::time::sleep(std::time::Duration::from_millis(500)) => {}
+            }
         }
     }
 }

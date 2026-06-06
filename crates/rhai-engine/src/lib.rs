@@ -5,6 +5,9 @@
 //! All scripts are compiled to AST once (cached); per-tick cost is a
 //! `Scope` allocation + `eval_ast_with_scope` call (~50–500µs typical).
 //!
+//! Plugin scripts run under [`ScriptSandbox`] restrictions; config scripts
+//! (`defpoll`, event handlers, user `(rhai-widget)`) are unrestricted.
+//!
 //! # Feature gate
 //! This crate does nothing unless the `rhai` feature is enabled at the
 //! workspace level. The stub type is always present so dependents compile
@@ -34,6 +37,8 @@ pub struct RhaiWidgetDef {
     pub fn_name: String,
     /// Default vars to watch when `:watch` is not specified at the call site.
     pub default_watch: Vec<String>,
+    /// Sandbox policy from the plugin manifest.
+    pub sandbox: ScriptSandbox,
 }
 
 // ── Widget registry (always compiled) ────────────────────────────────────────
@@ -106,7 +111,11 @@ impl RhaiEngine {
 
 // ── Real implementation ───────────────────────────────────────────────────────
 
+mod sandbox;
 #[cfg(feature = "rhai")]
 mod inner;
+
+pub use sandbox::ScriptSandbox;
+
 #[cfg(feature = "rhai")]
 pub use inner::{RhaiEngine, global, init};
