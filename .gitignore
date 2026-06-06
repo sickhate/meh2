@@ -1,3 +1,7 @@
 /target
 /meh2/
 /src/meh2/
+/pkg/
+*.pkg.tar.zst
+*.pkg.tar.zst.sig
+ideias

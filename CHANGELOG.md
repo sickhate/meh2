@@ -3,7 +3,7 @@
 All notable changes to meh2 are documented here.
 
 
-## meh2 0.1.0 (unreleased)
+## [Unreleased]
 
 ### Added
 
@@ -18,6 +18,9 @@ All notable changes to meh2 are documented here.
   `intersects()` / scoped eval, plugin sandbox policy.
 - **`gtk4-impl` module split** — monolithic `lib.rs` split into `bindings.rs`,
   `builder.rs`, `widgets.rs`, and `runtime.rs`.
+- **`builtin-default-config` Cargo feature** — embeds `examples/minimal-bar/` yuck + SCSS into the binary. When no `~/.config/meh2/` config exists, the embedded minimal bar is used automatically. Opt-in via `--features builtin-default-config`.
+- **`meh2-default-config/` PKGBUILD** — AUR variant with embedded default config.
+- **Performance section in README** — idle CPU, poll latency, Python elimination, RSS comparison table.
 
 ### Changed
 
@@ -26,6 +29,8 @@ All notable changes to meh2 are documented here.
     clone the full defwidget table).
   - `VarState::set()` returns whether the value changed; binding updates skipped
     when unchanged.
+  - Binding updates build a minimal var map (referenced vars only), not a full
+    `global_vars` clone every 33 ms tick.
   - `deflisten` gating — shell and Rhai listen vars pause when no windows are
     open (same model as `defpoll`).
   - Plugin poll dedup — skip channel send when output unchanged.
@@ -34,37 +39,19 @@ All notable changes to meh2 are documented here.
   - Systray pixmap icons capped at 256×256 (256 KB RGBA max).
 - **Config load** — daemon exits on yuck parse error instead of falling back to
   an empty default config.
-- **Tokio workspace dep** — `features = ["full"]` replaced with explicit
-  sub-features actually used by the daemon.
+- **PKGBUILD** — `check()` runs `cargo test --release --locked`.
 
 ### Fixed
 
-- **binding update per-tick speed** — Added `var_refs` cache to `Binding` and
-  `LoopBinding` so `collect_var_refs()` is called once at build time instead of
-  every 33ms tick. Added `intersects()` check so bindings whose referenced vars
-  haven't changed are skipped entirely during `update_bindings()`.
-- **notification history file** — Added `MAX_NOTIFS=50` cap to `notifications.sh`
-  to prevent unbounded growth of `~/.local/share/meh/notifications.json`.
+- **binding update per-tick speed** — `var_refs` cached at build time;
+  `intersects()` skips bindings whose vars did not change.
+- **notification history file** — `MAX_NOTIFS=50` cap in `notifications.sh`.
 - **README** — removed stale mimalloc claim; documents heap trimming instead.
-
-## [Unreleased]
-
-### Fixed
-
-- **Binding update no longer clones global_vars every frame** — `Binding::update()` and `LoopBinding::update()` previously cloned the entire `global_vars` HashMap (~50 entries) on every 33ms frame tick for each binding. Now they build a minimal HashMap using only the vars each expression actually references (typically 1–3). Eliminates the primary source of allocation churn that caused RSS to climb from ~48 MB to 60–100 MB. Also optimizes `EvalCtx::all_vars()` to start with scope (small) and only pull needed global vars.
-
-### Added
-- **`builtin-default-config` Cargo feature** — embeds `examples/minimal-bar/` yuck + SCSS into the binary. When no `~/.config/meh2/` config exists, the embedded minimal bar (clock, hostname, date, username, quicklaunch icons) is used automatically. Feature is opt-in (`--features builtin-default-config`), not part of any default profile.
-- **`meh2-default-config/` PKGBUILD** — variant that builds with `builtin-default-config` for AUR. `makepkg -si` produces a `meh2` binary that works out of the box with zero configuration.
-- **Performance section in README** — documents idle CPU, poll latency, Python elimination, RSS savings in a comparison table.
-- **Minimal bar updated** — rounded bottom edges (`border-radius: 0 0 12px`), username via `whoami` poll on the left end, quicklaunch icon buttons (browser ``, terminal ``, file manager ``) for config reference.
-
-### Fixed
-- **CI: gtk4 version requirement downgraded from v4_18 to v4_14** — same fix as meh. Required GTK ≥ 4.18 but Ubuntu 24.04 has 4.14.5. No v4_16+ APIs used, so `v4_14` works on both Ubuntu CI and Arch Linux (GTK 4.18+).
-- **CI: branch trigger fixed** — workflow was listening for pushes to `main` but the default branch is `master`. CI never fired.
-- **CI: `-Dintrospection=false` added to gtk4-layer-shell meson build** — `gobject-introspection-1.0` not available on Ubuntu 24.04 runner.
-- **CI: `libadwaita-1-dev` added to system dependencies** — needed by `libadwaita-sys` for the `animations` feature.
-- **CI: clippy fixes** — `collapsible_if` and `too_many_arguments` in `plugin-host/src/inner.rs`, `doc_overindented_list_items` in `plugin-host/src/lib.rs`.
+- **CI: gtk4 version requirement downgraded from v4_18 to v4_14** — Ubuntu 24.04 compatibility.
+- **CI: branch trigger fixed** — workflow listens on `master`, not `main`.
+- **CI: `-Dintrospection=false`** for gtk4-layer-shell meson build on Ubuntu runners.
+- **CI: `libadwaita-1-dev`** added to system dependencies.
+- **CI: clippy fixes** in plugin-host.
 
 ### Runtime optimisations (2026-05-31)
 

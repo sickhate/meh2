@@ -258,6 +258,8 @@ docs/plugins.md    plugin authoring + permissions
 
 Run tests: `cargo test --release --locked`
 
+Arch package build artifacts (`pkg/`, `*.pkg.tar.zst`) are gitignored.
+
 ---
 
 ## Phase status
