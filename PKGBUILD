@@ -1,7 +1,7 @@
 # Maintainer: sickhate <archate@gmail.com>
 pkgname=meh2
-pkgver=0.1.0.r75.6980166
-pkgrel=3
+pkgver=0.1.0.r79.cdf25b8
+pkgrel=1
 pkgdesc="GTK4 Wayland widget system with Rhai scripting (default build: no systray)"
 arch=('x86_64')
 url="https://github.com/sickhate/meh2"
