@@ -129,6 +129,21 @@ impl MehPaths {
         #[cfg(not(feature = "builtin-default-config"))]
         None
     }
+
+    /// True when `needle` appears in the main yuck file or stylesheet on disk.
+    pub fn config_text_contains(&self, needle: &str) -> bool {
+        if std::fs::read_to_string(self.main_yuck_file())
+            .is_ok_and(|s| s.contains(needle))
+        {
+            return true;
+        }
+        if let Some(scss) = self.scss_file() {
+            if let Ok(s) = std::fs::read_to_string(scss) {
+                return s.contains(needle);
+            }
+        }
+        false
+    }
 }
 
 // ── Variable state ────────────────────────────────────────────────────────────
@@ -189,8 +204,13 @@ impl<'a> EvalCtx<'a> {
     }
 
     pub fn eval_expr(&self, expr: &SimplExpr) -> Result<DynVal> {
-        expr.eval(&self.all_vars())
-            .map_err(|e| anyhow::anyhow!("{}", e))
+        if self.scope.is_empty() {
+            expr.eval(self.global_vars)
+                .map_err(|e| anyhow::anyhow!("{}", e))
+        } else {
+            expr.eval(&self.all_vars())
+                .map_err(|e| anyhow::anyhow!("{}", e))
+        }
     }
 
     pub fn eval_attr(&self, attrs: &Attributes, key: &str) -> Option<DynVal> {

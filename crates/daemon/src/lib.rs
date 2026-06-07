@@ -12,6 +12,7 @@ use std::{
 use anyhow::Result;
 use eww_shared_util::VarName;
 use meh_core::{IpcCmd, IpcResponse, MehConfig, MehPaths, ipc_read_request, ipc_write_reply};
+use meh_script_vars::ScriptVarSupervisor;
 use simplexpr::dynval::DynVal;
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -67,9 +68,13 @@ pub fn run(paths: MehPaths, daemonize: bool) -> Result<()> {
     // GTK4 must be initialised on the "main" thread.
     gtk4::init()?;
 
-    // Initialise platform integrations (libadwaita when compiled in).
-    // Returns the initial dark-mode state so we can pre-populate MEH_DARK.
-    let initial_dark = meh_gtk4::init_platform();
+    // Initialise platform integrations (GTK settings for optional MEH_DARK).
+    let uses_meh_dark = paths.config_text_contains("MEH_DARK");
+    let initial_dark = if uses_meh_dark {
+        meh_gtk4::init_platform()
+    } else {
+        None
+    };
 
     let mut config = MehConfig::load(&paths).map_err(|e| {
         tracing::error!("Failed to load config: {}", e);
@@ -113,6 +118,8 @@ pub fn run(paths: MehPaths, daemonize: bool) -> Result<()> {
     // Spawn the tokio runtime on a background thread
     let cmd_tx2 = cmd_tx.clone();
     let socket = paths.socket_file.clone();
+    let reload_paths = paths.clone();
+    let reload_config_dir = config_dir.clone();
     std::thread::Builder::new()
         .name("meh-async".to_string())
         .spawn(move || {
@@ -126,17 +133,7 @@ pub fn run(paths: MehPaths, daemonize: bool) -> Result<()> {
             meh_gtk4::set_tokio_handle(rt.handle().clone());
             meh_gtk4::set_config_dir(config_dir.clone());
             rt.block_on(async move {
-                let ipc = tokio::spawn(run_ipc_server(socket, cmd_tx2.clone()));
-                let sig = tokio::spawn({
-                    let tx = cmd_tx2.clone();
-                    async move {
-                        recv_exit().await.ok();
-                        let _ = tx.send(meh_gtk4::Cmd::Kill);
-                    }
-                });
-                // Start script vars. Returns (receiver, sender) — sender is
-                // cloned into plugin-host so all var updates share one channel.
-                let (var_rx, var_tx) = meh_script_vars::start_all(
+                let (supervisor, var_rx) = meh_script_vars::start_all(
                     &script_vars,
                     exit_sender().subscribe(),
                     windows_open.clone(),
@@ -144,17 +141,33 @@ pub fn run(paths: MehPaths, daemonize: bool) -> Result<()> {
                     window_closed.clone(),
                     config_dir.clone(),
                 );
+                let supervisor = Arc::new(supervisor);
 
-                // Start plugins (no-op when rhai-plugins feature is disabled).
+                let ipc = tokio::spawn(run_ipc_server(
+                    socket,
+                    cmd_tx2.clone(),
+                    reload_paths,
+                    reload_config_dir,
+                    windows_open.clone(),
+                    window_opened.clone(),
+                    window_closed.clone(),
+                    supervisor.clone(),
+                ));
+                let sig = tokio::spawn({
+                    let tx = cmd_tx2.clone();
+                    async move {
+                        recv_exit().await.ok();
+                        let _ = tx.send(meh_gtk4::Cmd::Kill);
+                    }
+                });
+
                 #[cfg(feature = "rhai-plugins")]
                 meh_plugin_host::start_plugins(
                     &config_dir,
-                    var_tx,
+                    supervisor.var_tx.clone(),
                     exit_sender().subscribe(),
                     windows_open.clone(),
                 );
-                #[cfg(not(feature = "rhai-plugins"))]
-                drop(var_tx);
 
                 let tx_vars = cmd_tx2.clone();
                 let vars_fwd = tokio::spawn(forward_var_updates(
@@ -167,8 +180,10 @@ pub fn run(paths: MehPaths, daemonize: bool) -> Result<()> {
             });
         })?;
 
-    // Wire system dark-mode change → MEH_DARK var update.
-    meh_gtk4::connect_color_scheme(cmd_tx.clone());
+    // Wire system dark-mode change → MEH_DARK var update (only when config uses it).
+    if uses_meh_dark {
+        meh_gtk4::connect_color_scheme(cmd_tx.clone());
+    }
 
     // React to monitor connect/disconnect: send MonitorsChanged into the cmd loop.
     let cmd_tx_mon = cmd_tx.clone();
@@ -299,6 +314,12 @@ async fn forward_var_updates(
 async fn run_ipc_server(
     socket_path: std::path::PathBuf,
     cmd_tx: UnboundedSender<meh_gtk4::Cmd>,
+    paths: MehPaths,
+    config_dir: std::path::PathBuf,
+    windows_open: Arc<AtomicBool>,
+    window_opened: Arc<tokio::sync::Notify>,
+    window_closed: Arc<tokio::sync::Notify>,
+    script_supervisor: Arc<ScriptVarSupervisor>,
 ) -> Result<()> {
     // Remove stale socket
     let _ = tokio::fs::remove_file(&socket_path).await;
@@ -311,14 +332,38 @@ async fn run_ipc_server(
             Ok(()) = recv_exit() => break,
             Ok((stream, _)) = listener.accept() => {
                 let tx = cmd_tx.clone();
-                tokio::spawn(handle_connection(stream, tx));
+                let paths = paths.clone();
+                let config_dir = config_dir.clone();
+                let windows_open = windows_open.clone();
+                let window_opened = window_opened.clone();
+                let window_closed = window_closed.clone();
+                let script_supervisor = script_supervisor.clone();
+                tokio::spawn(handle_connection(
+                    stream,
+                    tx,
+                    paths,
+                    config_dir,
+                    windows_open,
+                    window_opened,
+                    window_closed,
+                    script_supervisor,
+                ));
             }
         }
     }
     Ok(())
 }
 
-async fn handle_connection(stream: tokio::net::UnixStream, cmd_tx: UnboundedSender<meh_gtk4::Cmd>) {
+async fn handle_connection(
+    stream: tokio::net::UnixStream,
+    cmd_tx: UnboundedSender<meh_gtk4::Cmd>,
+    paths: MehPaths,
+    config_dir: std::path::PathBuf,
+    windows_open: Arc<AtomicBool>,
+    window_opened: Arc<tokio::sync::Notify>,
+    window_closed: Arc<tokio::sync::Notify>,
+    script_supervisor: Arc<ScriptVarSupervisor>,
+) {
     let (mut reader, mut writer) = tokio::io::split(stream);
 
     let cmd: IpcCmd = match ipc_read_request(&mut reader).await {
@@ -329,14 +374,33 @@ async fn handle_connection(stream: tokio::net::UnixStream, cmd_tx: UnboundedSend
         }
     };
 
-    let resp = dispatch_cmd(cmd, &cmd_tx).await;
+    let resp = dispatch_cmd(
+        cmd,
+        &cmd_tx,
+        &paths,
+        &config_dir,
+        windows_open,
+        window_opened,
+        window_closed,
+        script_supervisor,
+    )
+    .await;
 
     if let Err(e) = ipc_write_reply(&mut writer, &resp).await {
         tracing::warn!("IPC write error: {}", e);
     }
 }
 
-async fn dispatch_cmd(cmd: IpcCmd, cmd_tx: &UnboundedSender<meh_gtk4::Cmd>) -> IpcResponse {
+async fn dispatch_cmd(
+    cmd: IpcCmd,
+    cmd_tx: &UnboundedSender<meh_gtk4::Cmd>,
+    paths: &MehPaths,
+    config_dir: &std::path::Path,
+    windows_open: Arc<AtomicBool>,
+    window_opened: Arc<tokio::sync::Notify>,
+    window_closed: Arc<tokio::sync::Notify>,
+    script_supervisor: Arc<ScriptVarSupervisor>,
+) -> IpcResponse {
     match cmd {
         IpcCmd::Ping => IpcResponse::ok("pong"),
 
@@ -347,22 +411,31 @@ async fn dispatch_cmd(cmd: IpcCmd, cmd_tx: &UnboundedSender<meh_gtk4::Cmd>) -> I
         }
 
         IpcCmd::Reload => {
-            // Invalidate all Rhai AST caches before the GTK reload so the next
-            // call to any script (defpoll, rhai-widget, plugin) recompiles from disk.
-            #[cfg(feature = "rhai-plugins")]
-            if let Some(engine) = meh_rhai_engine::global() {
-                engine.invalidate_all();
-            }
+            meh_script_vars::invalidate_rhai_cache();
             #[cfg(feature = "rhai-plugins")]
             meh_plugin_host::invalidate_all();
 
             let (resp_tx, resp_rx) = tokio::sync::oneshot::channel();
             let _ = cmd_tx.send(ipc_to_gtk_cmd(IpcCmd::Reload, resp_tx));
-            match tokio::time::timeout(std::time::Duration::from_secs(5), resp_rx).await {
+            let resp = match tokio::time::timeout(std::time::Duration::from_secs(5), resp_rx).await {
                 Ok(Ok(r)) => r,
                 Ok(Err(_)) => IpcResponse::err("no response from daemon"),
                 Err(_) => IpcResponse::err("daemon timed out"),
+            };
+
+            if matches!(resp, IpcResponse::Ok(_))
+                && let Ok(cfg) = MehConfig::load(paths)
+            {
+                script_supervisor.restart(
+                    &cfg.yuck.script_vars,
+                    exit_sender().subscribe(),
+                    windows_open,
+                    window_opened,
+                    window_closed,
+                    config_dir.to_path_buf(),
+                );
             }
+            resp
         }
 
         other => {

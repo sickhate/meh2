@@ -26,48 +26,44 @@ pub fn spawn_cmd(cmd: &str) {
     if is_rhai {
         #[cfg(feature = "rhai")]
         {
-            if let Some(engine) = meh_rhai_engine::global() {
-                let cmd = cmd.to_owned();
-                let cdir = CONFIG_DIR
-                    .get()
-                    .cloned()
-                    .unwrap_or_else(|| std::path::PathBuf::from("."));
+            let engine = meh_rhai_engine::global().unwrap_or_else(|| meh_rhai_engine::init());
+            let cmd = cmd.to_owned();
+            let cdir = CONFIG_DIR
+                .get()
+                .cloned()
+                .unwrap_or_else(|| std::path::PathBuf::from("."));
 
-                // Run the Rhai script on the tokio blocking thread pool with a
-                // 500ms timeout enforced by the engine's operation limit.
-                // Any returned string is executed as a shell command so scripts
-                // can emit `"meh2 update VAR=value"` as their return value.
-                if let Some(handle) = TOKIO_HANDLE.get() {
-                    handle.spawn(async move {
-                        let result = tokio::task::spawn_blocking(move || {
-                            let s = cmd.trim();
-                            if let Some(inline) = s.strip_prefix("rhai:") {
-                                engine.eval_inline(inline.trim())
-                            } else {
-                                engine.eval_file(std::path::Path::new(s), &cdir)
-                            }
-                        })
-                        .await;
-
-                        match result {
-                            Ok(Ok(out)) if !out.is_empty() => {
-                                // Non-empty return value → run as shell command.
-                                let _ = tokio::process::Command::new("sh")
-                                    .arg("-c")
-                                    .arg(&out)
-                                    .spawn();
-                            }
-                            Ok(Err(e)) => tracing::warn!("rhai onclick: {e}"),
-                            _ => {}
+            if let Some(handle) = TOKIO_HANDLE.get() {
+                handle.spawn(async move {
+                    let result = tokio::task::spawn_blocking(move || {
+                        let s = cmd.trim();
+                        if let Some(inline) = s.strip_prefix("rhai:") {
+                            engine.eval_inline(inline.trim())
+                        } else {
+                            engine.eval_file(std::path::Path::new(s), &cdir)
                         }
-                    });
-                    return;
-                }
+                    })
+                    .await;
+
+                    match result {
+                        Ok(Ok(out)) if !out.is_empty() => {
+                            let _ = tokio::process::Command::new("sh")
+                                .arg("-c")
+                                .arg(&out)
+                                .spawn();
+                        }
+                        Ok(Err(e)) => tracing::warn!("rhai onclick: {e}"),
+                        _ => {}
+                    }
+                });
+                return;
             }
         }
-        // No engine (feature disabled or not yet init) — fall through to shell.
-        tracing::warn!("rhai event handler ignored (engine unavailable): {s}");
-        return;
+        #[cfg(not(feature = "rhai"))]
+        {
+            tracing::warn!("rhai event handler ignored (engine unavailable): {s}");
+            return;
+        }
     }
 
     let cmd = cmd.to_owned();

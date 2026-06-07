@@ -5,7 +5,7 @@ use std::{
     path::PathBuf,
     sync::{
         Arc,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
 };
 
@@ -18,6 +18,27 @@ use yuck::config::script_var_definition::{
 };
 
 pub type VarUpdate = (VarName, DynVal);
+
+/// Manages script-var tasks; call [`ScriptVarSupervisor::restart`] after config reload.
+pub struct ScriptVarSupervisor {
+    generation: Arc<AtomicUsize>,
+    pub var_tx: UnboundedSender<VarUpdate>,
+}
+
+fn generation_stale(generation: &Arc<AtomicUsize>, my_gen: usize) -> bool {
+    generation.load(Ordering::SeqCst) != my_gen
+}
+
+/// Clear cached Rhai ASTs so the next poll/listen/widget call recompiles from disk.
+#[cfg(feature = "rhai")]
+pub fn invalidate_rhai_cache() {
+    if let Some(engine) = meh_rhai_engine::global() {
+        engine.invalidate_all();
+    }
+}
+
+#[cfg(not(feature = "rhai"))]
+pub fn invalidate_rhai_cache() {}
 
 /// Start all script vars. Returns `(receiver, sender)` — the receiver feeds
 /// `forward_var_updates`; the sender can be cloned into plugin-host so plugins
@@ -35,57 +56,114 @@ pub fn start_all(
     window_closed: Arc<Notify>,
     config_dir: PathBuf,
 ) -> (
+    ScriptVarSupervisor,
     tokio::sync::mpsc::UnboundedReceiver<VarUpdate>,
-    UnboundedSender<VarUpdate>,
 ) {
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<VarUpdate>();
+    let supervisor = ScriptVarSupervisor {
+        generation: Arc::new(AtomicUsize::new(1)),
+        var_tx: tx,
+    };
+    supervisor.spawn_tasks(
+        vars,
+        shutdown,
+        windows_open,
+        window_opened,
+        window_closed,
+        config_dir,
+        1,
+    );
+    (supervisor, rx)
+}
 
-    // Initialise the Rhai engine once here so it is ready before any poll/listen
-    // task starts. No-op when the `rhai` feature is disabled.
-    #[cfg(feature = "rhai")]
-    meh_rhai_engine::init();
+impl ScriptVarSupervisor {
+    /// Stop all tasks from the previous generation and spawn fresh ones from `vars`.
+    pub fn restart(
+        &self,
+        vars: &std::collections::HashMap<VarName, ScriptVarDefinition>,
+        shutdown: tokio::sync::broadcast::Receiver<()>,
+        windows_open: Arc<AtomicBool>,
+        window_opened: Arc<Notify>,
+        window_closed: Arc<Notify>,
+        config_dir: PathBuf,
+    ) {
+        let my_gen = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
+        tracing::info!("script-vars: restarting generation {my_gen} ({} vars)", vars.len());
+        self.spawn_tasks(
+            vars,
+            shutdown,
+            windows_open,
+            window_opened,
+            window_closed,
+            config_dir,
+            my_gen,
+        );
+    }
 
-    // Kill any orphaned subprocesses left by a previous daemon run (e.g. after
-    // SIGKILL or crash). Scans /proc for processes whose cmdline contains the
-    // config scripts directory — those can only be our deflisten children.
-    kill_orphaned_scripts(&config_dir);
+    fn spawn_tasks(
+        &self,
+        vars: &std::collections::HashMap<VarName, ScriptVarDefinition>,
+        shutdown: tokio::sync::broadcast::Receiver<()>,
+        windows_open: Arc<AtomicBool>,
+        window_opened: Arc<Notify>,
+        window_closed: Arc<Notify>,
+        config_dir: PathBuf,
+        my_gen: usize,
+    ) {
+        #[cfg(feature = "rhai")]
+        if my_gen == 1 && vars_need_rhai(vars) {
+            meh_rhai_engine::init();
+        }
 
-    tracing::debug!("start_all: {} vars in {}", vars.len(), config_dir.display());
-    for def in vars.values() {
-        match def {
-            ScriptVarDefinition::Poll(p) => {
-                let p = p.clone();
-                let tx = tx.clone();
-                let shutdown = shutdown.resubscribe();
-                let wo = windows_open.clone();
-                let dir = config_dir.clone();
-                tokio::spawn(run_poll(p, tx, shutdown, wo, dir));
-            }
-            ScriptVarDefinition::Listen(l) => {
-                let l = l.clone();
-                let tx = tx.clone();
-                let shutdown = shutdown.resubscribe();
-                let dir = config_dir.clone();
-                tokio::spawn(run_listen(
-                    l,
-                    tx,
-                    shutdown,
-                    windows_open.clone(),
-                    window_opened.clone(),
-                    window_closed.clone(),
-                    dir,
-                ));
-            }
-            ScriptVarDefinition::Subscribe(s) => {
-                let s = s.clone();
-                let tx = tx.clone();
-                let shutdown = shutdown.resubscribe();
-                tokio::spawn(run_subscribe(s, tx, shutdown));
+        if my_gen == 1 {
+            kill_orphaned_scripts(&config_dir);
+        }
+
+        tracing::debug!(
+            "spawn_tasks gen={my_gen}: {} vars in {}",
+            vars.len(),
+            config_dir.display()
+        );
+        let generation = self.generation.clone();
+        for def in vars.values() {
+            match def {
+                ScriptVarDefinition::Poll(p) => {
+                    let p = p.clone();
+                    let tx = self.var_tx.clone();
+                    let shutdown = shutdown.resubscribe();
+                    let wo = windows_open.clone();
+                    let dir = config_dir.clone();
+                    let generation_arc = generation.clone();
+                    tokio::spawn(run_poll(p, tx, shutdown, wo, dir, generation_arc, my_gen));
+                }
+                ScriptVarDefinition::Listen(l) => {
+                    let l = l.clone();
+                    let tx = self.var_tx.clone();
+                    let shutdown = shutdown.resubscribe();
+                    let dir = config_dir.clone();
+                    let generation_arc = generation.clone();
+                    tokio::spawn(run_listen(
+                        l,
+                        tx,
+                        shutdown,
+                        windows_open.clone(),
+                        window_opened.clone(),
+                        window_closed.clone(),
+                        dir,
+                        generation_arc,
+                        my_gen,
+                    ));
+                }
+                ScriptVarDefinition::Subscribe(s) => {
+                    let s = s.clone();
+                    let tx = self.var_tx.clone();
+                    let shutdown = shutdown.resubscribe();
+                    let generation_arc = generation.clone();
+                    tokio::spawn(run_subscribe(s, tx, shutdown, generation_arc, my_gen));
+                }
             }
         }
     }
-
-    (rx, tx)
 }
 
 // ── Poll ──────────────────────────────────────────────────────────────────────
@@ -96,6 +174,8 @@ async fn run_poll(
     mut shutdown: tokio::sync::broadcast::Receiver<()>,
     windows_open: Arc<AtomicBool>,
     config_dir: PathBuf,
+    generation: Arc<AtomicUsize>,
+    my_gen: usize,
 ) {
     let cmd = match &def.command {
         VarSource::Shell(_, s) => s.clone(),
@@ -118,6 +198,9 @@ async fn run_poll(
     timer.tick().await; // skip the first (immediate) tick
 
     loop {
+        if generation_stale(&generation, my_gen) {
+            break;
+        }
         tokio::select! {
             _ = shutdown.recv() => break,
             _ = timer.tick() => {
@@ -148,6 +231,8 @@ async fn run_listen(
     window_opened: Arc<Notify>,
     window_closed: Arc<Notify>,
     config_dir: PathBuf,
+    generation: Arc<AtomicUsize>,
+    my_gen: usize,
 ) {
     use tokio::io::{AsyncBufReadExt, BufReader};
 
@@ -163,6 +248,9 @@ async fn run_listen(
         let mut timer = tokio::time::interval(std::time::Duration::from_secs(1));
         timer.tick().await;
         loop {
+            if generation_stale(&generation, my_gen) {
+                return;
+            }
             tokio::select! {
                 _ = shutdown.recv() => return,
                 _ = timer.tick() => {
@@ -187,7 +275,13 @@ async fn run_listen(
     // window closes the child (and its process group) is killed and restarted on
     // the next open — same gating model as defpoll, without leaving orphans.
     loop {
+        if generation_stale(&generation, my_gen) {
+            return;
+        }
         while !windows_open.load(Ordering::Relaxed) {
+            if generation_stale(&generation, my_gen) {
+                return;
+            }
             tokio::select! {
                 _ = shutdown.recv() => return,
                 _ = window_opened.notified() => {}
@@ -265,6 +359,8 @@ async fn run_subscribe(
     def: SubscribeScriptVar,
     tx: UnboundedSender<VarUpdate>,
     shutdown: tokio::sync::broadcast::Receiver<()>,
+    generation: Arc<AtomicUsize>,
+    my_gen: usize,
 ) {
     use yuck::config::script_var_definition::SubscribeSource;
 
@@ -275,7 +371,7 @@ async fn run_subscribe(
         SubscribeSource::File { .. } => {
             #[cfg(feature = "inotify-vars")]
             {
-                if let Err(e) = run_subscribe_file(def, tx, shutdown).await {
+                if let Err(e) = run_subscribe_file(def, tx, shutdown, generation, my_gen).await {
                     tracing::warn!("subscribe file error: {e}");
                 }
             }
@@ -291,7 +387,7 @@ async fn run_subscribe(
         SubscribeSource::Dbus { .. } => {
             #[cfg(feature = "dbus-vars")]
             {
-                if let Err(e) = run_subscribe_dbus(def, tx, shutdown).await {
+                if let Err(e) = run_subscribe_dbus(def, tx, shutdown, generation, my_gen).await {
                     tracing::warn!("subscribe dbus error: {e}");
                 }
             }
@@ -341,6 +437,8 @@ async fn run_subscribe_file(
     def: SubscribeScriptVar,
     tx: UnboundedSender<VarUpdate>,
     mut shutdown: tokio::sync::broadcast::Receiver<()>,
+    generation: Arc<AtomicUsize>,
+    my_gen: usize,
 ) -> Result<()> {
     use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
     use yuck::config::script_var_definition::SubscribeSource;
@@ -376,6 +474,9 @@ async fn run_subscribe_file(
     };
 
     loop {
+        if generation_stale(&generation, my_gen) {
+            break;
+        }
         tokio::select! {
             _ = shutdown.recv() => break,
             msg = event_rx.recv() => {
@@ -465,6 +566,8 @@ async fn run_subscribe_dbus(
     def: SubscribeScriptVar,
     tx: UnboundedSender<VarUpdate>,
     mut shutdown: tokio::sync::broadcast::Receiver<()>,
+    generation: Arc<AtomicUsize>,
+    my_gen: usize,
 ) -> Result<()> {
     use futures::StreamExt;
     use yuck::config::script_var_definition::{DbusKind, SubscribeSource};
@@ -506,6 +609,9 @@ async fn run_subscribe_dbus(
     let mut stream = MessageStream::for_match_rule(rule, &conn, None).await?;
 
     loop {
+        if generation_stale(&generation, my_gen) {
+            break;
+        }
         tokio::select! {
             _ = shutdown.recv() => break,
             msg = stream.next() => {
@@ -676,12 +782,23 @@ fn is_rhai_source(cmd: &str) -> bool {
     s.ends_with(".rhai") || s.starts_with("rhai:")
 }
 
+/// True when any configured script var uses a Rhai poll/listen source.
+fn vars_need_rhai(vars: &std::collections::HashMap<VarName, ScriptVarDefinition>) -> bool {
+    vars.values().any(|def| match def {
+        ScriptVarDefinition::Poll(p) => match &p.command {
+            VarSource::Shell(_, s) => is_rhai_source(s),
+            VarSource::Function(_) => false,
+        },
+        ScriptVarDefinition::Listen(l) => is_rhai_source(&l.command),
+        ScriptVarDefinition::Subscribe(_) => false,
+    })
+}
+
 /// Execute a Rhai source synchronously (call from `spawn_blocking`).
 fn run_rhai(cmd: &str, config_dir: &std::path::Path) -> Result<String> {
     #[cfg(feature = "rhai")]
     {
-        let engine = meh_rhai_engine::global()
-            .ok_or_else(|| anyhow::anyhow!("rhai engine not initialised"))?;
+        let engine = meh_rhai_engine::global().unwrap_or_else(|| meh_rhai_engine::init());
         let s = cmd.trim();
         if let Some(inline) = s.strip_prefix("rhai:") {
             engine.eval_inline(inline.trim())

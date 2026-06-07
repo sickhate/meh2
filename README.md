@@ -21,12 +21,12 @@
 - **Deflisten process groups** — `deflisten` subprocesses run while windows are open (gated like defpoll when the bar is hidden); SIGTERM on shutdown reaches grandchildren (inotifywait, playerctl --follow, nmcli monitor, etc.).
 - **Declarative animations** — `AdwTimedAnimation` on `progress` values and opacity. Interruptible, respects system reduced-motion.
 - **Native app launcher** — `(launcher)` widget: instant `gio::AppInfo` search, PATH executable autocomplete, keyboard nav, click-to-launch.
-- **System tray** — StatusNotifierItem/StatusNotifierHost. Opt-in via `systray` Cargo feature.
+- **System tray** — StatusNotifierItem/StatusNotifierHost. Opt-in: `cargo build --features systray` or `--features full`.
 - **`(shader)` widget** — GLSL fragment shaders via `GtkGLArea`. Full profile only.
 - **Heap trimming** — popups are destroyed with `gtk_window_destroy()` and `malloc_trim(0)` returns freed image memory to the OS, keeping resident memory flat over long uptimes.
 - **Plugin sandbox** — `plugin.toml` permissions enforce file read allowlists and opt-in `run_shell()`.
 - **Versioned IPC** — CLI/daemon protocol v1; mismatched versions fail with a clear error.
-- **Three build profiles**: `minimal`, `default` (systray + dbus + animations + rhai + plugins), `full` (+ shader).
+- **Three build profiles**: `minimal`, `default` (rhai + dbus + animations — no systray/plugins), `full` (+ systray, plugins, shader).
 
 ---
 
@@ -127,11 +127,14 @@ sudo install -Dm755 target/release/meh2 /usr/bin/meh2
 # Minimal — no Rhai, no tray, no animations
 cargo build --release --no-default-features --features minimal
 
-# Default — everything most users want (includes Rhai + plugins)
+# Default — Rhai, dbus, inotify, animations (no systray or plugins)
 cargo build --release
 
-# Full — default + GLSL shaders
+# Full — default + systray + Rhai plugins + GLSL shaders
 cargo build --release --features full
+
+# À la carte — e.g. systray only
+cargo build --release --features systray
 ```
 
 ---

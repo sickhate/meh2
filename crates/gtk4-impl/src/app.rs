@@ -326,17 +326,14 @@ impl App {
             .retain(|(name, _)| !to_reopen.iter().any(|(n, _)| n == name));
     }
 
-    /// Reactive update: re-evaluate only bindings whose expressions changed.
-    /// This is O(bindings) per update, not O(widget-tree), and causes no GTK layout passes
-    /// unless a value actually changed.
+    /// Reactive update: re-evaluate bindings whose expressions reference changed vars.
     pub fn update_bindings(&mut self, changed_vars: &HashSet<VarName>) {
         let global_vars = &self.config.var_state.vars;
         for live in self.open_windows.values_mut() {
             for binding in &mut live.bindings {
-                if !binding.intersects(changed_vars) {
-                    continue;
+                if binding.intersects(changed_vars) {
+                    binding.update_matching(changed_vars, global_vars);
                 }
-                binding.update(global_vars);
             }
         }
     }
@@ -457,14 +454,12 @@ use gtk4::gdk;
 
 // ── Platform integration ──────────────────────────────────────────────────────
 
-/// Call once after `gtk4::init()`.  Initialises libadwaita (when the
-/// `animations` feature is compiled in) and returns the initial value of the
-/// system dark-mode flag.  Returns `None` without the feature — callers treat
-/// that as "dark-mode detection not available".
+/// Call once after `gtk4::init()`. Returns the initial system dark-mode flag
+/// using GTK settings only — libadwaita is deferred until an animation widget
+/// or `connect_color_scheme` needs it.
 #[cfg(feature = "animations")]
 pub fn init_platform() -> Option<bool> {
-    crate::widgets::ensure_adw_init();
-    Some(libadwaita::StyleManager::default().is_dark())
+    gtk4::Settings::default().map(|s| s.is_gtk_application_prefer_dark_theme())
 }
 
 #[cfg(not(feature = "animations"))]
@@ -478,6 +473,7 @@ pub fn init_platform() -> Option<bool> {
 #[cfg(feature = "animations")]
 pub fn connect_color_scheme(cmd_tx: tokio::sync::mpsc::UnboundedSender<Cmd>) {
     use gtk4::glib::prelude::ObjectExt;
+    crate::widgets::ensure_adw_init();
     libadwaita::StyleManager::default().connect_notify_local(Some("dark"), move |mgr, _| {
         let val = DynVal::from_string(if mgr.is_dark() { "true" } else { "false" }.to_string());
         let mut map = HashMap::new();

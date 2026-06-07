@@ -19,7 +19,7 @@ use yuck::config::{
 };
 use yuck::parser::ast::Ast;
 
-use crate::{AnyBinding, BINDING_COLLECTOR, build_widget};
+use crate::{AnyBinding, BINDING_COLLECTOR, build_widget, collect_bindings};
 use crate::runtime::CONFIG_DIR;
 
 // ── Reactive binding ──────────────────────────────────────────────────────────
@@ -35,6 +35,9 @@ pub struct RhaiWidgetBinding {
     pub(crate) fn_name: String,
     pub(crate) container: gtk4::Box,
     pub(crate) last_watched_vals: HashMap<VarName, String>,
+    /// Bindings inside the Rhai-built subtree; replaced on each rebuild.
+    pub(crate) child_bindings: Vec<AnyBinding>,
+    pub(crate) sandbox: Option<meh_rhai_engine::ScriptSandbox>,
 }
 
 impl RhaiWidgetBinding {
@@ -59,21 +62,31 @@ impl RhaiWidgetBinding {
     }
 
     pub fn intersects(&self, changed: &std::collections::HashSet<VarName>) -> bool {
-        self.watched_vars.iter().any(|v| changed.contains(v))
+        if self.watched_vars.iter().any(|v| changed.contains(v)) {
+            return true;
+        }
+        self.child_bindings
+            .iter()
+            .any(|b| b.intersects(changed))
     }
 
-    fn rebuild(&self, global_vars: &HashMap<VarName, DynVal>) {
-        let Some(engine) = meh_rhai_engine::global() else {
-            tracing::warn!("rhai-widget: engine unavailable on rebuild");
-            return;
-        };
+    pub fn update_children(
+        &mut self,
+        changed: &std::collections::HashSet<VarName>,
+        global_vars: &HashMap<VarName, DynVal>,
+    ) {
+        for child in &mut self.child_bindings {
+            child.update_matching(changed, global_vars);
+        }
+    }
+
+    fn rebuild(&mut self, global_vars: &HashMap<VarName, DynVal>) {
+        let engine = meh_rhai_engine::global().unwrap_or_else(|| meh_rhai_engine::init());
         let config_dir = CONFIG_DIR
             .get()
             .map(|p| p.as_path())
             .unwrap_or(std::path::Path::new("."));
 
-        // Merge static call-site attrs with current watched-var values;
-        // watched vars take precedence so the latest value always wins.
         let mut vars = self.static_attrs.clone();
         for v in &self.watched_vars {
             let val = global_vars
@@ -83,12 +96,17 @@ impl RhaiWidgetBinding {
             vars.insert(v.0.clone(), val);
         }
 
-        let data = match engine.call_fn_as_widget_data(
-            &self.script_path,
-            config_dir,
-            &self.fn_name,
-            &vars,
-        ) {
+        let data = match if let Some(ref sandbox) = self.sandbox {
+            engine.call_fn_as_widget_data_sandboxed(
+                &self.script_path,
+                config_dir,
+                &self.fn_name,
+                &vars,
+                Some(sandbox.clone()),
+            )
+        } else {
+            engine.call_fn_as_widget_data(&self.script_path, config_dir, &self.fn_name, &vars)
+        } {
             Ok(d) => d,
             Err(e) => {
                 tracing::error!("rhai-widget {}: {}", self.fn_name, e);
@@ -103,8 +121,10 @@ impl RhaiWidgetBinding {
             widget_defs: self.widget_defs.clone(),
         };
 
-        match build_widget(&wu, &ctx) {
+        let (build_result, child_bindings) = collect_bindings(|| build_widget(&wu, &ctx));
+        match build_result {
             Ok(new_child) => {
+                self.child_bindings = child_bindings;
                 while let Some(child) = self.container.first_child() {
                     self.container.remove(&child);
                 }
@@ -113,6 +133,14 @@ impl RhaiWidgetBinding {
             Err(e) => tracing::error!("rhai-widget rebuild {}: {}", self.fn_name, e),
         }
     }
+}
+
+fn register_rhai_binding(binding: RhaiWidgetBinding) {
+    BINDING_COLLECTOR.with(|col| {
+        if let Some(bindings) = col.borrow_mut().as_mut() {
+            bindings.push(AnyBinding::RhaiWidget(binding));
+        }
+    });
 }
 
 // ── Builder ───────────────────────────────────────────────────────────────────
@@ -147,9 +175,7 @@ pub fn build_rhai_widget(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::Wid
         config_dir.join(&src)
     };
 
-    let Some(engine) = meh_rhai_engine::global() else {
-        anyhow::bail!("rhai-widget: Rhai engine not initialised");
-    };
+    let engine = meh_rhai_engine::global().unwrap_or_else(|| meh_rhai_engine::init());
 
     let watched_vars: Vec<VarName> = watch
         .split_whitespace()
@@ -171,7 +197,8 @@ pub fn build_rhai_widget(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::Wid
 
     let data = engine.call_fn_as_widget_data(&script_path, config_dir, &fn_name, &initial_vars)?;
     let inner_wu = rhai_data_to_widget_use(data, wu.span);
-    let inner = build_widget(&inner_wu, ctx)?;
+    let (inner, child_bindings) = collect_bindings(|| build_widget(&inner_wu, ctx));
+    let inner = inner?;
 
     let container = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
     container.append(&inner);
@@ -189,19 +216,17 @@ pub fn build_rhai_widget(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::Wid
             })
             .collect();
 
-        BINDING_COLLECTOR.with(|col| {
-            if let Some(bindings) = col.borrow_mut().as_mut() {
-                bindings.push(AnyBinding::RhaiWidget(RhaiWidgetBinding {
-                    watched_vars,
-                    static_attrs: HashMap::new(),
-                    scope: ctx.scope.clone(),
-                    widget_defs: ctx.widget_defs.clone(),
-                    script_path,
-                    fn_name,
-                    container: container.clone(),
-                    last_watched_vals,
-                }));
-            }
+        register_rhai_binding(RhaiWidgetBinding {
+            watched_vars,
+            static_attrs: HashMap::new(),
+            scope: ctx.scope.clone(),
+            widget_defs: ctx.widget_defs.clone(),
+            script_path,
+            fn_name,
+            container: container.clone(),
+            last_watched_vals,
+            child_bindings,
+            sandbox: None,
         });
     }
 
@@ -223,11 +248,8 @@ pub fn build_rhai_defwidget(
         .map(|p| p.as_path())
         .unwrap_or(std::path::Path::new("."));
 
-    let Some(engine) = meh_rhai_engine::global() else {
-        anyhow::bail!("rhai-defwidget `{}`: Rhai engine not initialised", wu.name);
-    };
+    let engine = meh_rhai_engine::global().unwrap_or_else(|| meh_rhai_engine::init());
 
-    // Resolve :watch — call-site overrides the plugin's default_watch.
     let watch_override = wu
         .attrs
         .attrs
@@ -249,7 +271,6 @@ pub fn build_rhai_defwidget(
             .collect(),
     };
 
-    // Evaluate all call-site attrs (excluding meta-attr :watch) as static values.
     let mut static_attrs: HashMap<String, String> = HashMap::new();
     for (attr_name, entry) in &wu.attrs.attrs {
         if attr_name.0 == "watch" {
@@ -265,7 +286,6 @@ pub fn build_rhai_defwidget(
         static_attrs.insert(attr_name.0.clone(), val);
     }
 
-    // Build initial scope: static attrs + current watched-var values.
     let mut scope_vars = static_attrs.clone();
     for var in &watched_vars {
         let val = ctx
@@ -284,7 +304,8 @@ pub fn build_rhai_defwidget(
         Some(def.sandbox.clone()),
     )?;
     let inner_wu = rhai_data_to_widget_use(data, wu.span);
-    let inner = build_widget(&inner_wu, ctx)?;
+    let (inner, child_bindings) = collect_bindings(|| build_widget(&inner_wu, ctx));
+    let inner = inner?;
 
     let container = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
     container.append(&inner);
@@ -302,19 +323,17 @@ pub fn build_rhai_defwidget(
             })
             .collect();
 
-        BINDING_COLLECTOR.with(|col| {
-            if let Some(bindings) = col.borrow_mut().as_mut() {
-                bindings.push(AnyBinding::RhaiWidget(RhaiWidgetBinding {
-                    watched_vars,
-                    static_attrs,
-                    scope: ctx.scope.clone(),
-                    widget_defs: ctx.widget_defs.clone(),
-                    script_path: def.script_path.clone(),
-                    fn_name: def.fn_name.clone(),
-                    container: container.clone(),
-                    last_watched_vals,
-                }));
-            }
+        register_rhai_binding(RhaiWidgetBinding {
+            watched_vars,
+            static_attrs,
+            scope: ctx.scope.clone(),
+            widget_defs: ctx.widget_defs.clone(),
+            script_path: def.script_path.clone(),
+            fn_name: def.fn_name.clone(),
+            container: container.clone(),
+            last_watched_vals,
+            child_bindings,
+            sandbox: Some(def.sandbox.clone()),
         });
     }
 

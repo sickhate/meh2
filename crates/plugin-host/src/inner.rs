@@ -119,6 +119,8 @@ pub fn start_plugins(
         return;
     }
 
+    meh_rhai_engine::init();
+
     let script_paths_for_watch: Vec<PathBuf> = plugins.iter().map(|p| p.script.clone()).collect();
 
     // Build the widget registry from all discovered plugins before spawning tasks.
@@ -260,10 +262,7 @@ async fn run_plugin_var(
     windows_open: Arc<AtomicBool>,
     sandbox: meh_rhai_engine::ScriptSandbox,
 ) {
-    let Some(engine) = meh_rhai_engine::global() else {
-        tracing::warn!("plugin var {}: rhai engine not initialised", var_name);
-        return;
-    };
+    let engine = meh_rhai_engine::global().unwrap_or_else(|| meh_rhai_engine::init());
 
     // Initial fetch — always runs regardless of windows_open so var_state is
     // populated before the first window opens (same behaviour as defpoll).

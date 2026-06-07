@@ -8,8 +8,8 @@ resolver = "2"
 # that the top-level `cli` crate re-exports):
 #
 #   minimal : cargo build --release --no-default-features --features minimal
-#   default : cargo build --release                (includes systray, dbus-vars, …)
-#   full    : cargo build --release --features full
+#   default : cargo build --release                (rhai, dbus, inotify, animations — no systray/plugins)
+#   full    : cargo build --release --features full  (+ systray, rhai-plugins, shader)
 #
 # Every feature must have zero idle cost when compiled in but unused in yuck.
 

@@ -1,7 +1,7 @@
 // GPL-3.0-or-later
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
@@ -36,9 +36,12 @@ pub fn init() -> Arc<RhaiEngine> {
 ///
 /// `rhai/sync` feature makes `Engine: Send + Sync`, so this type is safe to
 /// share across threads via `Arc`.
+/// Maximum compiled scripts kept in the AST cache (FIFO eviction).
+const MAX_AST_CACHE: usize = 64;
+
 pub struct RhaiEngine {
     engine: Engine,
-    cache: Mutex<HashMap<PathBuf, Arc<AST>>>,
+    cache: Mutex<(HashMap<PathBuf, Arc<AST>>, VecDeque<PathBuf>)>,
 }
 
 // Safety: `Engine` is Send+Sync when compiled with the `sync` feature (which
@@ -219,7 +222,7 @@ impl RhaiEngine {
 
         Arc::new(Self {
             engine,
-            cache: Mutex::new(HashMap::new()),
+            cache: Mutex::new((HashMap::new(), VecDeque::new())),
         })
     }
 
@@ -355,17 +358,21 @@ impl RhaiEngine {
 
     /// Remove a file's compiled AST from the cache (call on hot-reload).
     pub fn invalidate(&self, path: &Path) {
-        if let Ok(mut c) = self.cache.lock() {
-            c.remove(path);
+        if let Ok(mut guard) = self.cache.lock() {
+            let (cache, order) = &mut *guard;
+            cache.remove(path);
+            order.retain(|p| p != path);
         }
     }
 
     /// Clear the entire AST cache so all scripts are recompiled on the next call.
     /// Call this on `meh2 reload` to pick up changes to any Rhai script.
     pub fn invalidate_all(&self) {
-        if let Ok(mut c) = self.cache.lock() {
-            let n = c.len();
-            c.clear();
+        if let Ok(mut guard) = self.cache.lock() {
+            let (cache, order) = &mut *guard;
+            let n = cache.len();
+            cache.clear();
+            order.clear();
             tracing::debug!("rhai-engine: cleared {} cached AST(s)", n);
         }
     }
@@ -374,10 +381,11 @@ impl RhaiEngine {
 
     fn get_or_compile(&self, path: &PathBuf) -> Result<Arc<AST>> {
         {
-            let cache = self
+            let guard = self
                 .cache
                 .lock()
                 .map_err(|_| anyhow::anyhow!("rhai cache mutex poisoned"))?;
+            let (cache, _order) = &*guard;
             if let Some(ast) = cache.get(path) {
                 return Ok(Arc::clone(ast));
             }
@@ -389,10 +397,21 @@ impl RhaiEngine {
                 .map_err(|e| anyhow::anyhow!("rhai compile `{}`: {}", path.display(), e))?,
         );
 
-        let mut cache = self
+        let mut guard = self
             .cache
             .lock()
             .map_err(|_| anyhow::anyhow!("rhai cache mutex poisoned"))?;
+        let (cache, order) = &mut *guard;
+        if !cache.contains_key(path) {
+            while cache.len() >= MAX_AST_CACHE {
+                if let Some(old) = order.pop_front() {
+                    cache.remove(&old);
+                } else {
+                    break;
+                }
+            }
+            order.push_back(path.clone());
+        }
         cache.insert(path.clone(), Arc::clone(&ast));
         Ok(ast)
     }

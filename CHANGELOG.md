@@ -7,6 +7,13 @@ All notable changes to meh2 are documented here.
 
 ### Added
 
+- **Binding subtree lifecycle** — `(for)` loops and `(rhai-widget)` rebuilds now
+  drop old child bindings and register fresh ones; nested reactive attrs keep
+  working after dynamic rebuilds.
+- **`ScriptVarSupervisor`** — `meh2 reload` restarts defpoll/deflisten/defsubscribe
+  tasks from the updated yuck config (generation-based cancellation).
+- **CI workflow** — GitHub Actions: `cargo test` (default + minimal) and clippy.
+- **Rhai AST cache cap** — FIFO eviction at 64 compiled scripts.
 - **IPC protocol versioning** — `IpcRequest` / `IpcReply` envelopes with
   `IPC_PROTOCOL_VERSION = 1`. CLI and daemon must match; mismatch returns a
   clear error. 16 MB max message size on read.
@@ -24,6 +31,10 @@ All notable changes to meh2 are documented here.
 
 ### Changed
 
+- **Default build profile** — systray and `rhai-plugins` removed from default; use
+  `--features full` or `--features systray` / `--features rhai-plugins` à la carte.
+  Unused compiled features stay idle: Rhai engine, libadwaita, and DBus tray host
+  initialise only on first use.
 - **Memory / resource optimisations**
   - Shared `Arc<HashMap>` for widget definitions (loop/rhai bindings no longer
     clone the full defwidget table).
@@ -37,9 +48,15 @@ All notable changes to meh2 are documented here.
   - Tokio runtime trimmed to explicit feature set; daemon uses 1 worker + 8
     blocking threads.
   - Systray pixmap icons capped at 256×256 (256 KB RGBA max).
+  - **Lazy launcher** — `AppInfo::all()` and PATH scan deferred until first keystroke.
+  - **Systray wake** — tray icons processed on event (16 ms coalesce) instead of
+    a dedicated 50 ms poll loop.
+  - **`EvalCtx::eval_expr`** — skips scope merge when loop scope is empty.
+  - **Rhai cache invalidation on reload** — via `meh_script_vars::invalidate_rhai_cache()`
+    (not gated on `rhai-plugins` feature).
 - **Config load** — daemon exits on yuck parse error instead of falling back to
   an empty default config.
-- **PKGBUILD** — `check()` runs `cargo test --release --locked`.
+- **PKGBUILD** — builds default profile (no systray/plugins); `check()` runs `cargo test --release --locked`.
 
 ### Fixed
 

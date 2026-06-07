@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -Dwarnings
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-4-dev libadwaita-1-dev libgtk-4-layer-shell-dev \
+            libegl-dev libgles-dev libdbus-1-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: cargo test (default features)
+        run: cargo test --workspace --locked
+
+      - name: cargo test (minimal)
+        run: cargo test -p meh2 --no-default-features --features minimal --locked
+
+      - name: clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings

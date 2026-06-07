@@ -1,8 +1,8 @@
 # Maintainer: sickhate <archate@gmail.com>
 pkgname=meh2
 pkgver=0.1.0.r75.6980166
-pkgrel=2
-pkgdesc="GTK4 Wayland widget system with Rhai scripting (meh2 fork of meh/eww)"
+pkgrel=3
+pkgdesc="GTK4 Wayland widget system with Rhai scripting (default build: no systray)"
 arch=('x86_64')
 url="https://github.com/sickhate/meh2"
 license=('GPL-3.0-or-later')
@@ -30,6 +30,8 @@ build() {
     cd "$srcdir/$pkgname"
     export RUSTUP_TOOLCHAIN=stable
     export CARGO_TARGET_DIR=target
+    # Default profile: rhai + dbus/inotify vars + animations — no systray or plugins.
+    # Use `cargo build --release --locked --features full` for tray + plugins + shader.
     cargo build --release --locked
 }
 

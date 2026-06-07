@@ -1,8 +1,12 @@
 // GPL-3.0-or-later
 //! Individual GTK widget builders.
 
-use std::collections::HashMap;
 use std::cell::RefCell;
+#[cfg(feature = "systray")]
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, Ordering},
+};
 
 use anyhow::{Result, bail};
 use gtk4::{gdk, glib, prelude::*};
@@ -938,32 +942,40 @@ pub(crate) fn build_literal(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::
 
 #[cfg(feature = "systray")]
 pub(crate) fn build_systray(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::Box> {
-    use std::{cell::RefCell, collections::HashMap, rc::Rc};
+    use std::{
+        collections::HashMap,
+        sync::{
+            Arc, Mutex,
+            atomic::{AtomicBool, Ordering},
+        },
+    };
 
     let container = gtk4::Box::new(gtk4::Orientation::Horizontal, 4);
     apply_common_props(&container.clone().upcast::<gtk4::Widget>(), wu, ctx);
 
-    // mpsc channel: tx is Send (moved to tokio task), rx polled on GTK thread.
     let (tx, rx) = std::sync::mpsc::channel::<SystrayEvent>();
-    let rx = Rc::new(RefCell::new(rx));
+    let rx = Arc::new(Mutex::new(rx));
+    let pending = Arc::new(AtomicBool::new(false));
 
-    let items: Rc<RefCell<HashMap<String, gtk4::Button>>> = Default::default();
-    let items2 = items.clone();
-    let container2 = container.clone();
+    let items: Arc<Mutex<HashMap<String, gtk4::Button>>> = Default::default();
 
-    // Poll for tray events every 50 ms on the GTK thread.
-    gtk4::glib::timeout_add_local(std::time::Duration::from_millis(50), move || {
-        loop {
-            match rx.borrow().try_recv() {
-                Ok(ev) => systray_handle_event(ev, &container2, &items2),
-                Err(std::sync::mpsc::TryRecvError::Empty) => break,
-                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                    return gtk4::glib::ControlFlow::Break;
-                }
+    {
+        let rx = rx.clone();
+        let container = container.clone();
+        let items = items.clone();
+        let pending = pending.clone();
+        gtk4::glib::timeout_add_local(std::time::Duration::from_millis(16), move || {
+            if !pending.swap(false, Ordering::AcqRel) {
+                return gtk4::glib::ControlFlow::Continue;
             }
-        }
-        gtk4::glib::ControlFlow::Continue
-    });
+            while let Ok(ev) = rx.lock().unwrap().try_recv() {
+                systray_handle_event(ev, &container, &items);
+            }
+            gtk4::glib::ControlFlow::Continue
+        });
+    }
+
+    let tray_tx = TrayEventSender { tx, pending };
 
     let Some(handle) = TOKIO_HANDLE.get() else {
         tracing::warn!("systray: no tokio handle set; tray will be empty");
@@ -971,12 +983,37 @@ pub(crate) fn build_systray(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::
     };
 
     handle.spawn(async move {
-        if let Err(e) = run_notifier_host_task(tx).await {
+        if let Err(e) = run_notifier_host_task(tray_tx).await {
             tracing::error!("systray host error: {}", e);
         }
     });
 
     Ok(container)
+}
+
+#[cfg(feature = "systray")]
+struct TrayEventSender {
+    tx: std::sync::mpsc::Sender<SystrayEvent>,
+    pending: Arc<AtomicBool>,
+}
+
+#[cfg(feature = "systray")]
+impl Clone for TrayEventSender {
+    fn clone(&self) -> Self {
+        Self {
+            tx: self.tx.clone(),
+            pending: self.pending.clone(),
+        }
+    }
+}
+
+#[cfg(feature = "systray")]
+impl TrayEventSender {
+    fn send(&self, ev: SystrayEvent) {
+        if self.tx.send(ev).is_ok() {
+            self.pending.store(true, Ordering::Release);
+        }
+    }
 }
 
 #[cfg(feature = "systray")]
@@ -996,7 +1033,7 @@ enum SystrayEvent {
 pub(crate) fn systray_handle_event(
     ev: SystrayEvent,
     container: &gtk4::Box,
-    items: &std::rc::Rc<std::cell::RefCell<std::collections::HashMap<String, gtk4::Button>>>,
+    items: &Arc<Mutex<std::collections::HashMap<String, gtk4::Button>>>,
 ) {
     use std::sync::Arc;
     match ev {
@@ -1026,10 +1063,10 @@ pub(crate) fn systray_handle_event(
             });
 
             container.append(&btn);
-            items.borrow_mut().insert(id, btn);
+            items.lock().unwrap().insert(id, btn);
         }
         SystrayEvent::Remove { id } => {
-            if let Some(btn) = items.borrow_mut().remove(&id) {
+            if let Some(btn) = items.lock().unwrap().remove(&id) {
                 container.remove(&btn);
             }
         }
@@ -1090,11 +1127,11 @@ pub(crate) fn systray_icon_to_image(icon: meh_notifier_host::IconResult) -> gtk4
 }
 
 #[cfg(feature = "systray")]
-async fn run_notifier_host_task(tx: std::sync::mpsc::Sender<SystrayEvent>) -> anyhow::Result<()> {
+async fn run_notifier_host_task(tray_tx: TrayEventSender) -> anyhow::Result<()> {
     use meh_notifier_host::{Host, Item, Watcher, register_as_host, run_host};
 
     struct MehHost {
-        tx: std::sync::mpsc::Sender<SystrayEvent>,
+        tx: TrayEventSender,
     }
 
     impl Host for MehHost {
@@ -1104,7 +1141,7 @@ async fn run_notifier_host_task(tx: std::sync::mpsc::Sender<SystrayEvent>) -> an
             tokio::spawn(async move {
                 let icon = item.load_icon_result(24).await;
                 let tooltip = item.sni.title().await.ok().filter(|s| !s.is_empty());
-                let _ = tx.send(SystrayEvent::Add {
+                tx.send(SystrayEvent::Add {
                     id,
                     icon,
                     tooltip,
@@ -1114,14 +1151,14 @@ async fn run_notifier_host_task(tx: std::sync::mpsc::Sender<SystrayEvent>) -> an
         }
 
         fn remove_item(&mut self, id: &str) {
-            let _ = self.tx.send(SystrayEvent::Remove { id: id.to_owned() });
+            self.tx.send(SystrayEvent::Remove { id: id.to_owned() });
         }
     }
 
     let con = zbus::Connection::session().await?;
     Watcher::new().attach_to(&con).await?;
     let (_name, snw) = register_as_host(&con).await?;
-    let mut host = MehHost { tx };
+    let mut host = MehHost { tx: tray_tx };
     let err = run_host(&mut host, &snw).await;
     Err(anyhow::anyhow!("notifier host: {}", err))
 }

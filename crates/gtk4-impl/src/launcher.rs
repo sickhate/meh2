@@ -11,7 +11,7 @@
 //!   `:terminal`     — terminal to use for PATH executables, e.g. "foot" or "kitty"
 //!                     (default ""; bins are run directly — suitable when they are GUI apps)
 
-use std::{cell::Cell, rc::Rc};
+use std::{cell::{Cell, RefCell}, rc::Rc};
 
 use anyhow::Result;
 use gtk4::{gdk::Key, gio, prelude::*};
@@ -48,13 +48,8 @@ pub fn build_launcher(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::Widget
             .to_string(),
     );
 
-    let all_apps: Rc<Vec<gio::AppInfo>> = Rc::new(
-        gio::AppInfo::all()
-            .into_iter()
-            .filter(|a| a.should_show())
-            .collect(),
-    );
-    let all_bins: Rc<Vec<String>> = Rc::new(collect_path_bins());
+    let all_apps: Rc<RefCell<Option<Vec<gio::AppInfo>>>> = Rc::new(RefCell::new(None));
+    let all_bins: Rc<RefCell<Option<Vec<String>>>> = Rc::new(RefCell::new(None));
 
     // ── Layout ───────────────────────────────────────────────────────────────
     let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
@@ -91,8 +86,8 @@ pub fn build_launcher(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::Widget
             let mut items: Vec<ResultItem> = Vec::new();
 
             if !q.is_empty() {
-                // Desktop apps first.
-                let apps: Vec<ResultItem> = all_apps
+                let apps_cache = cached_apps(&all_apps);
+                let apps: Vec<ResultItem> = apps_cache
                     .iter()
                     .filter(|a| {
                         a.display_name().to_lowercase().contains(&q)
@@ -103,9 +98,9 @@ pub fn build_launcher(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::Widget
                     .map(ResultItem::App)
                     .collect();
                 items.extend(apps);
-                // PATH executables — shown only when :show-bins is true.
                 if show_bins {
-                    let bins: Vec<ResultItem> = all_bins
+                    let bins_cache = cached_bins(&all_bins);
+                    let bins: Vec<ResultItem> = bins_cache
                         .iter()
                         .filter(|b| b.to_lowercase().contains(&q))
                         .take(4)
@@ -359,6 +354,27 @@ fn make_run_row(cmd: &str, selected: bool, window_name: &str) -> gtk4::Box {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+fn cached_apps(cache: &Rc<RefCell<Option<Vec<gio::AppInfo>>>>) -> Vec<gio::AppInfo> {
+    let mut guard = cache.borrow_mut();
+    if guard.is_none() {
+        *guard = Some(
+            gio::AppInfo::all()
+                .into_iter()
+                .filter(|a| a.should_show())
+                .collect(),
+        );
+    }
+    guard.as_ref().cloned().unwrap_or_default()
+}
+
+fn cached_bins(cache: &Rc<RefCell<Option<Vec<String>>>>) -> Vec<String> {
+    let mut guard = cache.borrow_mut();
+    if guard.is_none() {
+        *guard = Some(collect_path_bins());
+    }
+    guard.as_ref().cloned().unwrap_or_default()
+}
 
 /// Returns `<terminal> -e <cmd>` when a terminal is configured, else just `<cmd>`.
 fn bin_launch(terminal: &str, cmd: &str) -> String {

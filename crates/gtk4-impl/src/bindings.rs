@@ -90,9 +90,26 @@ pub struct LoopBinding {
     widget_defs: Arc<HashMap<String, WidgetDefinition>>,
     container: gtk4::Box,
     last_val: String,
+    /// Bindings registered inside loop body items; replaced on each rebuild.
+    child_bindings: Vec<AnyBinding>,
 }
 
 impl LoopBinding {
+    fn rebuild_children(&mut self, global_vars: &HashMap<VarName, DynVal>) {
+        self.child_bindings.clear();
+        while let Some(child) = self.container.first_child() {
+            self.container.remove(&child);
+        }
+        let ctx = EvalCtx {
+            scope: self.scope.clone(),
+            global_vars,
+            widget_defs: self.widget_defs.clone(),
+        };
+        let (_, collected) =
+            collect_bindings(|| populate_loop_container(&self.container, &self.lp, &ctx));
+        self.child_bindings = collected;
+    }
+
     pub fn update(&mut self, global_vars: &HashMap<VarName, DynVal>) -> bool {
         let new_val = eval_binding_expr(
             &self.expr,
@@ -105,24 +122,27 @@ impl LoopBinding {
             return false;
         }
         self.last_val = new_val;
-
-        while let Some(child) = self.container.first_child() {
-            self.container.remove(&child);
-        }
-        let ctx = EvalCtx {
-            scope: self.scope.clone(),
-            global_vars,
-            widget_defs: self.widget_defs.clone(),
-        };
-        populate_loop_container(&self.container, &self.lp, &ctx);
+        self.rebuild_children(global_vars);
         true
     }
 
     pub fn intersects(&self, changed: &std::collections::HashSet<VarName>) -> bool {
-        if self.is_constant {
-            return false;
+        if !self.is_constant && self.var_refs.iter().any(|v| changed.contains(v)) {
+            return true;
         }
-        self.var_refs.iter().any(|v| changed.contains(v))
+        self.child_bindings
+            .iter()
+            .any(|b| b.intersects(changed))
+    }
+
+    pub fn intersects_own(&self, changed: &std::collections::HashSet<VarName>) -> bool {
+        !self.is_constant && self.var_refs.iter().any(|v| changed.contains(v))
+    }
+
+    pub fn update_children(&mut self, changed: &std::collections::HashSet<VarName>, global_vars: &HashMap<VarName, DynVal>) {
+        for child in &mut self.child_bindings {
+            child.update_matching(changed, global_vars);
+        }
     }
 }
 
@@ -141,6 +161,34 @@ impl AnyBinding {
             AnyBinding::Loop(b) => b.update(global_vars),
             #[cfg(feature = "rhai")]
             AnyBinding::RhaiWidget(b) => b.update(global_vars),
+        }
+    }
+
+    /// Update this binding and any nested child bindings when `changed` intersects them.
+    pub fn update_matching(
+        &mut self,
+        changed: &std::collections::HashSet<VarName>,
+        global_vars: &HashMap<VarName, DynVal>,
+    ) {
+        match self {
+            AnyBinding::Attr(b) => {
+                if b.intersects(changed) {
+                    b.update(global_vars);
+                }
+            }
+            AnyBinding::Loop(b) => {
+                b.update_children(changed, global_vars);
+                if b.intersects_own(changed) {
+                    b.update(global_vars);
+                }
+            }
+            #[cfg(feature = "rhai")]
+            AnyBinding::RhaiWidget(b) => {
+                b.update_children(changed, global_vars);
+                if b.intersects(changed) {
+                    b.update(global_vars);
+                }
+            }
         }
     }
 
@@ -201,7 +249,13 @@ pub(crate) fn maybe_bind<F>(
 }
 
 /// Register a reactive loop binding — fires when `lp.elements_expr` references any variable.
-pub(crate) fn register_loop_binding(lp: &LoopWidgetUse, ctx: &EvalCtx, container: gtk4::Box, initial: String) {
+pub(crate) fn register_loop_binding(
+    lp: &LoopWidgetUse,
+    ctx: &EvalCtx,
+    container: gtk4::Box,
+    initial: String,
+    child_bindings: Vec<AnyBinding>,
+) {
     if lp.elements_expr.collect_var_refs().is_empty() {
         return;
     }
@@ -218,6 +272,7 @@ pub(crate) fn register_loop_binding(lp: &LoopWidgetUse, ctx: &EvalCtx, container
                 widget_defs: ctx.widget_defs.clone(),
                 container,
                 last_val: initial,
+                child_bindings,
             }));
         }
     });

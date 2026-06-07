@@ -95,8 +95,9 @@ pub(crate) fn build_loop_oriented(
 ) -> Result<gtk4::Widget> {
     let items_val = ctx.eval_expr(&lp.elements_expr)?;
     let container = gtk4::Box::new(orientation, 0);
-    populate_loop_container(&container, lp, ctx);
-    register_loop_binding(lp, ctx, container.clone(), items_val.0);
+    let (_, child_bindings) =
+        collect_bindings(|| populate_loop_container(&container, lp, ctx));
+    register_loop_binding(lp, ctx, container.clone(), items_val.0, child_bindings);
     Ok(container.upcast())
 }
 

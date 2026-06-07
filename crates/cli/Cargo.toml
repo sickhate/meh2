@@ -11,8 +11,8 @@ path = "src/main.rs"
 [features]
 # Build profiles — pick one via --features
 minimal = []
-default = ["systray", "dbus-vars", "inotify-vars", "animations", "extra-widgets", "granular-reload", "jq", "tz", "rhai", "rhai-plugins"]
-full    = ["default", "shader"]
+default = ["dbus-vars", "inotify-vars", "animations", "extra-widgets", "granular-reload", "jq", "tz", "rhai"]
+full    = ["default", "systray", "rhai-plugins", "shader"]
 
 # Individual capabilities
 systray         = ["meh_gtk4/systray"]
