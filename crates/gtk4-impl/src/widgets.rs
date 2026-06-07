@@ -8,17 +8,16 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
-use anyhow::{Result, bail};
-use gtk4::{gdk, glib, prelude::*};
+use anyhow::Result;
+use gtk4::{gdk, prelude::*};
 use meh_core::EvalCtx;
 use yuck::config::widget_use::{BasicWidgetUse, WidgetUse};
 
 use crate::bindings::maybe_bind;
-use crate::builder::{
-    apply_common_props, build_basic_with_prebuilt, build_loop_oriented, build_widget,
-    build_widget_with_children, expand_defwidget,
-};
-use crate::runtime::{TOKIO_HANDLE, spawn_cmd};
+use crate::builder::{apply_common_props, build_loop_oriented, build_widget};
+use crate::runtime::spawn_cmd;
+#[cfg(feature = "systray")]
+use crate::runtime::TOKIO_HANDLE;
 
 #[cfg(feature = "animations")]
 use libadwaita::prelude::AnimationExt;

@@ -26,5 +26,4 @@ pub use runtime::{set_config_dir, set_tokio_handle, spawn_cmd};
 
 pub(crate) use bindings::BINDING_COLLECTOR;
 pub(crate) use builder::apply_common_props;
-pub(crate) use runtime::CONFIG_DIR;
 

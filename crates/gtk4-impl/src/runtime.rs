@@ -1,8 +1,6 @@
 // GPL-3.0-or-later
 //! Tokio handle, config dir, and event-handler command dispatch.
 
-use gtk4::prelude::*;
-
 pub(crate) static TOKIO_HANDLE: once_cell::sync::OnceCell<tokio::runtime::Handle> =
     once_cell::sync::OnceCell::new();
 
@@ -74,8 +72,3 @@ pub fn spawn_cmd(cmd: &str) {
             .spawn();
     });
 }
-
-#[cfg(feature = "animations")]
-use libadwaita::prelude::AnimationExt;
-
-use gtk4::glib;
