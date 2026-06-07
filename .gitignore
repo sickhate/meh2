@@ -5,3 +5,5 @@
 *.pkg.tar.zst
 *.pkg.tar.zst.sig
 ideias
+.opencode/
+PKGBUILD
