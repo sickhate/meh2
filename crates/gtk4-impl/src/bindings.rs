@@ -202,17 +202,35 @@ impl AnyBinding {
     }
 }
 
-// Active only during `collect_bindings()`; None otherwise.
+// Nested `collect_bindings` (e.g. loop bodies inside a window) uses a stack so inner
+// frames do not discard bindings already registered in outer frames.
 thread_local! {
-    pub(crate) static BINDING_COLLECTOR: RefCell<Option<Vec<AnyBinding>>> = const { RefCell::new(None) };
+    pub(crate) static BINDING_COLLECTOR: RefCell<Vec<Vec<AnyBinding>>> =
+        const { RefCell::new(Vec::new()) };
+}
+
+fn push_binding_frame() {
+    BINDING_COLLECTOR.with(|col| col.borrow_mut().push(Vec::new()));
+}
+
+fn pop_binding_frame() -> Vec<AnyBinding> {
+    BINDING_COLLECTOR.with(|col| col.borrow_mut().pop().unwrap_or_default())
+}
+
+pub(crate) fn with_current_bindings(f: impl FnOnce(&mut Vec<AnyBinding>)) {
+    BINDING_COLLECTOR.with(|col| {
+        if let Some(frame) = col.borrow_mut().last_mut() {
+            f(frame);
+        }
+    });
 }
 
 /// Run `f` while collecting any bindings registered via `maybe_bind` / `register_loop_binding`.
 /// Returns the result of `f` plus all collected bindings.
 pub fn collect_bindings<T>(f: impl FnOnce() -> T) -> (T, Vec<AnyBinding>) {
-    BINDING_COLLECTOR.with(|col| *col.borrow_mut() = Some(Vec::new()));
+    push_binding_frame();
     let result = f();
-    let bindings = BINDING_COLLECTOR.with(|col| col.borrow_mut().take().unwrap_or_default());
+    let bindings = pop_binding_frame();
     (result, bindings)
 }
 
@@ -231,19 +249,17 @@ pub(crate) fn maybe_bind<F>(
         && let Ok(expr) = entry.value.as_simplexpr()
         && !expr.collect_var_refs().is_empty()
     {
-        BINDING_COLLECTOR.with(|col| {
-            if let Some(bindings) = col.borrow_mut().as_mut() {
-                let var_refs = expr.collect_var_refs();
-                let is_constant = var_refs.is_empty();
-                bindings.push(AnyBinding::Attr(Binding {
-                    expr,
-                    var_refs,
-                    is_constant,
-                    scope: scope.clone(),
-                    setter: Box::new(setter),
-                    last_val: initial,
-                }));
-            }
+        with_current_bindings(|bindings| {
+            let var_refs = expr.collect_var_refs();
+            let is_constant = var_refs.is_empty();
+            bindings.push(AnyBinding::Attr(Binding {
+                expr,
+                var_refs,
+                is_constant,
+                scope: scope.clone(),
+                setter: Box::new(setter),
+                last_val: initial,
+            }));
         });
     }
 }
@@ -259,22 +275,20 @@ pub(crate) fn register_loop_binding(
     if lp.elements_expr.collect_var_refs().is_empty() {
         return;
     }
-    BINDING_COLLECTOR.with(|col| {
-        if let Some(bindings) = col.borrow_mut().as_mut() {
-            let var_refs = lp.elements_expr.collect_var_refs();
-            let is_constant = var_refs.is_empty();
-            bindings.push(AnyBinding::Loop(LoopBinding {
-                expr: lp.elements_expr.clone(),
-                var_refs,
-                is_constant,
-                scope: ctx.scope.clone(),
-                lp: lp.clone(),
-                widget_defs: ctx.widget_defs.clone(),
-                container,
-                last_val: initial,
-                child_bindings,
-            }));
-        }
+    with_current_bindings(|bindings| {
+        let var_refs = lp.elements_expr.collect_var_refs();
+        let is_constant = var_refs.is_empty();
+        bindings.push(AnyBinding::Loop(LoopBinding {
+            expr: lp.elements_expr.clone(),
+            var_refs,
+            is_constant,
+            scope: ctx.scope.clone(),
+            lp: lp.clone(),
+            widget_defs: ctx.widget_defs.clone(),
+            container,
+            last_val: initial,
+            child_bindings,
+        }));
     });
 }
 
@@ -303,6 +317,40 @@ mod tests {
         assert!(!binding.intersects(&changed));
         let changed: HashSet<VarName> = [VarName("greeting".into())].into_iter().collect();
         assert!(binding.intersects(&changed));
+    }
+
+    #[test]
+    fn nested_collect_bindings_preserves_outer_frame() {
+        let ((), outer) = collect_bindings(|| {
+            with_current_bindings(|frame| {
+                frame.push(AnyBinding::Attr(Binding {
+                    expr: expr("outer"),
+                    var_refs: vec![VarName("outer".into())],
+                    is_constant: false,
+                    scope: HashMap::new(),
+                    setter: Box::new(|_| {}),
+                    last_val: String::new(),
+                }));
+            });
+
+            let ((), inner) = collect_bindings(|| {
+                with_current_bindings(|frame| {
+                    frame.push(AnyBinding::Attr(Binding {
+                        expr: expr("inner"),
+                        var_refs: vec![VarName("inner".into())],
+                        is_constant: false,
+                        scope: HashMap::new(),
+                        setter: Box::new(|_| {}),
+                        last_val: String::new(),
+                    }));
+                });
+            });
+
+            assert_eq!(inner.len(), 1);
+            BINDING_COLLECTOR.with(|col| assert_eq!(col.borrow().len(), 1));
+        });
+
+        assert_eq!(outer.len(), 1);
     }
 
     #[test]

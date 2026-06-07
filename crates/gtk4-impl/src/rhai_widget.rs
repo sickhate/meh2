@@ -19,7 +19,7 @@ use yuck::config::{
 };
 use yuck::parser::ast::Ast;
 
-use crate::{AnyBinding, BINDING_COLLECTOR, build_widget, collect_bindings};
+use crate::{AnyBinding, build_widget, collect_bindings};
 use crate::runtime::CONFIG_DIR;
 
 // ── Reactive binding ──────────────────────────────────────────────────────────
@@ -136,10 +136,8 @@ impl RhaiWidgetBinding {
 }
 
 fn register_rhai_binding(binding: RhaiWidgetBinding) {
-    BINDING_COLLECTOR.with(|col| {
-        if let Some(bindings) = col.borrow_mut().as_mut() {
-            bindings.push(AnyBinding::RhaiWidget(binding));
-        }
+    crate::with_current_bindings(|bindings| {
+        bindings.push(AnyBinding::RhaiWidget(binding));
     });
 }
 
