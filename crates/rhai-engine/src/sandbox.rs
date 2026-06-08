@@ -1,11 +1,11 @@
 // GPL-3.0-or-later
 //! Per-script sandbox policy for plugin Rhai code.
 
-use std::{
-    cell::RefCell,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
+#[cfg(feature = "rhai")]
+use std::cell::RefCell;
 
+#[cfg(feature = "rhai")]
 thread_local! {
     static ACTIVE: RefCell<Option<ScriptSandbox>> = const { RefCell::new(None) };
 }
@@ -66,6 +66,7 @@ fn path_starts_with(path: &Path, prefix: &Path) -> bool {
     }
 }
 
+#[cfg(feature = "rhai")]
 pub(crate) fn with_sandbox<R>(sandbox: Option<ScriptSandbox>, f: impl FnOnce() -> R) -> R {
     ACTIVE.with(|cell| *cell.borrow_mut() = sandbox);
     let result = f();
@@ -73,6 +74,7 @@ pub(crate) fn with_sandbox<R>(sandbox: Option<ScriptSandbox>, f: impl FnOnce() -
     result
 }
 
+#[cfg(feature = "rhai")]
 pub(crate) fn read_allowed(path: &str) -> bool {
     ACTIVE.with(|cell| {
         cell.borrow()
@@ -82,6 +84,7 @@ pub(crate) fn read_allowed(path: &str) -> bool {
     })
 }
 
+#[cfg(feature = "rhai")]
 pub(crate) fn shell_allowed() -> bool {
     ACTIVE.with(|cell| cell.borrow().as_ref().map(|sb| sb.allows_shell()).unwrap_or(true))
 }

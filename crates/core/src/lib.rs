@@ -137,10 +137,10 @@ impl MehPaths {
         {
             return true;
         }
-        if let Some(scss) = self.scss_file() {
-            if let Ok(s) = std::fs::read_to_string(scss) {
-                return s.contains(needle);
-            }
+        if let Some(scss) = self.scss_file()
+            && let Ok(s) = std::fs::read_to_string(scss)
+        {
+            return s.contains(needle);
         }
         false
     }

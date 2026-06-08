@@ -24,6 +24,5 @@ pub use bindings::{AnyBinding, collect_bindings};
 pub use builder::build_widget;
 pub use runtime::{set_config_dir, set_tokio_handle, spawn_cmd};
 
-pub(crate) use bindings::with_current_bindings;
 pub(crate) use builder::apply_common_props;
 

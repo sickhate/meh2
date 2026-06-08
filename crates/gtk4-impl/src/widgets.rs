@@ -1,7 +1,6 @@
 // GPL-3.0-or-later
 //! Individual GTK widget builders.
 
-use std::cell::RefCell;
 #[cfg(feature = "systray")]
 use std::sync::{
     Arc, Mutex,
@@ -376,8 +375,8 @@ pub(crate) fn build_progress(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4:
         let easing = parse_adw_easing(ctx.eval_attr_str(attrs, "animate-easing").as_deref());
         if duration > 0 {
             ensure_adw_init();
-            let anim_holder: std::rc::Rc<RefCell<Option<libadwaita::TimedAnimation>>> =
-                std::rc::Rc::new(RefCell::new(None));
+            let anim_holder: std::rc::Rc<std::cell::RefCell<Option<libadwaita::TimedAnimation>>> =
+                std::rc::Rc::new(std::cell::RefCell::new(None));
             let ah = anim_holder.clone();
             let bc = bar.clone();
             maybe_bind(attrs, "value", &ctx.scope, value.to_string(), move |v| {

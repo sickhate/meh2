@@ -136,7 +136,7 @@ impl RhaiWidgetBinding {
 }
 
 fn register_rhai_binding(binding: RhaiWidgetBinding) {
-    crate::with_current_bindings(|bindings| {
+    crate::bindings::with_current_bindings(|bindings| {
         bindings.push(AnyBinding::RhaiWidget(binding));
     });
 }

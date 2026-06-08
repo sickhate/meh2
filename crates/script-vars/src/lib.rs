@@ -364,6 +364,9 @@ async fn run_subscribe(
 ) {
     use yuck::config::script_var_definition::SubscribeSource;
 
+    #[cfg(not(any(feature = "inotify-vars", feature = "dbus-vars")))]
+    let _ = (generation, my_gen);
+
     // Always emit the initial value immediately so var_state is populated.
     let _ = tx.send((def.name.clone(), def.initial_value.clone()));
 
@@ -783,6 +786,7 @@ fn is_rhai_source(cmd: &str) -> bool {
 }
 
 /// True when any configured script var uses a Rhai poll/listen source.
+#[cfg(feature = "rhai")]
 fn vars_need_rhai(vars: &std::collections::HashMap<VarName, ScriptVarDefinition>) -> bool {
     vars.values().any(|def| match def {
         ScriptVarDefinition::Poll(p) => match &p.command {

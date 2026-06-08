@@ -39,9 +39,11 @@ pub fn init() -> Arc<RhaiEngine> {
 /// Maximum compiled scripts kept in the AST cache (FIFO eviction).
 const MAX_AST_CACHE: usize = 64;
 
+type AstCache = (HashMap<PathBuf, Arc<AST>>, VecDeque<PathBuf>);
+
 pub struct RhaiEngine {
     engine: Engine,
-    cache: Mutex<(HashMap<PathBuf, Arc<AST>>, VecDeque<PathBuf>)>,
+    cache: Mutex<AstCache>,
 }
 
 // Safety: `Engine` is Send+Sync when compiled with the `sync` feature (which

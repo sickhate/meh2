@@ -2,7 +2,6 @@
 //! Widget tree construction, common props, and event handlers.
 
 use std::collections::HashMap;
-use std::cell::RefCell;
 
 use anyhow::{Result, bail};
 use eww_shared_util::VarName;
@@ -337,8 +336,8 @@ pub(crate) fn apply_common_props(widget: &impl IsA<gtk4::Widget>, wu: &BasicWidg
             let easing = parse_adw_easing(ctx.eval_attr_str(attrs, "animate-easing").as_deref());
             if duration > 0 {
                 ensure_adw_init();
-                let anim_holder: std::rc::Rc<RefCell<Option<libadwaita::TimedAnimation>>> =
-                    std::rc::Rc::new(RefCell::new(None));
+                let anim_holder: std::rc::Rc<std::cell::RefCell<Option<libadwaita::TimedAnimation>>> =
+                    std::rc::Rc::new(std::cell::RefCell::new(None));
                 let ah = anim_holder.clone();
                 let wc = widget.upcast_ref::<gtk4::Widget>().clone();
                 maybe_bind(attrs, "opacity", &ctx.scope, initial_str, move |v| {
