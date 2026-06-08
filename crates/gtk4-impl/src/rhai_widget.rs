@@ -81,7 +81,7 @@ impl RhaiWidgetBinding {
     }
 
     fn rebuild(&mut self, global_vars: &HashMap<VarName, DynVal>) {
-        let engine = meh_rhai_engine::global().unwrap_or_else(|| meh_rhai_engine::init());
+        let engine = meh_rhai_engine::global().unwrap_or_else(meh_rhai_engine::init);
         let config_dir = CONFIG_DIR
             .get()
             .map(|p| p.as_path())
@@ -173,7 +173,7 @@ pub fn build_rhai_widget(wu: &BasicWidgetUse, ctx: &EvalCtx) -> Result<gtk4::Wid
         config_dir.join(&src)
     };
 
-    let engine = meh_rhai_engine::global().unwrap_or_else(|| meh_rhai_engine::init());
+    let engine = meh_rhai_engine::global().unwrap_or_else(meh_rhai_engine::init);
 
     let watched_vars: Vec<VarName> = watch
         .split_whitespace()
@@ -246,7 +246,7 @@ pub fn build_rhai_defwidget(
         .map(|p| p.as_path())
         .unwrap_or(std::path::Path::new("."));
 
-    let engine = meh_rhai_engine::global().unwrap_or_else(|| meh_rhai_engine::init());
+    let engine = meh_rhai_engine::global().unwrap_or_else(meh_rhai_engine::init);
 
     let watch_override = wu
         .attrs

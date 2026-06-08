@@ -24,7 +24,7 @@ pub fn spawn_cmd(cmd: &str) {
     if is_rhai {
         #[cfg(feature = "rhai")]
         {
-            let engine = meh_rhai_engine::global().unwrap_or_else(|| meh_rhai_engine::init());
+            let engine = meh_rhai_engine::global().unwrap_or_else(meh_rhai_engine::init);
             let cmd = cmd.to_owned();
             let cdir = CONFIG_DIR
                 .get()

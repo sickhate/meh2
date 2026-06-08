@@ -262,7 +262,7 @@ async fn run_plugin_var(
     windows_open: Arc<AtomicBool>,
     sandbox: meh_rhai_engine::ScriptSandbox,
 ) {
-    let engine = meh_rhai_engine::global().unwrap_or_else(|| meh_rhai_engine::init());
+    let engine = meh_rhai_engine::global().unwrap_or_else(meh_rhai_engine::init);
 
     // Initial fetch — always runs regardless of windows_open so var_state is
     // populated before the first window opens (same behaviour as defpoll).
