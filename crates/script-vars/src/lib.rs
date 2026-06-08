@@ -19,6 +19,17 @@ use yuck::config::script_var_definition::{
 
 pub type VarUpdate = (VarName, DynVal);
 
+/// Shared per-generation context passed when spawning poll/listen/subscribe tasks.
+struct SpawnCtx {
+    shutdown: tokio::sync::broadcast::Receiver<()>,
+    windows_open: Arc<AtomicBool>,
+    window_opened: Arc<Notify>,
+    window_closed: Arc<Notify>,
+    config_dir: PathBuf,
+    generation: Arc<AtomicUsize>,
+    my_gen: usize,
+}
+
 /// Manages script-var tasks; call [`ScriptVarSupervisor::restart`] after config reload.
 pub struct ScriptVarSupervisor {
     generation: Arc<AtomicUsize>,
@@ -66,12 +77,15 @@ pub fn start_all(
     };
     supervisor.spawn_tasks(
         vars,
-        shutdown,
-        windows_open,
-        window_opened,
-        window_closed,
-        config_dir,
-        1,
+        SpawnCtx {
+            shutdown,
+            windows_open,
+            window_opened,
+            window_closed,
+            config_dir,
+            generation: supervisor.generation.clone(),
+            my_gen: 1,
+        },
     );
     (supervisor, rx)
 }
@@ -91,25 +105,32 @@ impl ScriptVarSupervisor {
         tracing::info!("script-vars: restarting generation {my_gen} ({} vars)", vars.len());
         self.spawn_tasks(
             vars,
-            shutdown,
-            windows_open,
-            window_opened,
-            window_closed,
-            config_dir,
-            my_gen,
+            SpawnCtx {
+                shutdown,
+                windows_open,
+                window_opened,
+                window_closed,
+                config_dir,
+                generation: self.generation.clone(),
+                my_gen,
+            },
         );
     }
 
     fn spawn_tasks(
         &self,
         vars: &std::collections::HashMap<VarName, ScriptVarDefinition>,
-        shutdown: tokio::sync::broadcast::Receiver<()>,
-        windows_open: Arc<AtomicBool>,
-        window_opened: Arc<Notify>,
-        window_closed: Arc<Notify>,
-        config_dir: PathBuf,
-        my_gen: usize,
+        ctx: SpawnCtx,
     ) {
+        let SpawnCtx {
+            shutdown,
+            windows_open,
+            window_opened,
+            window_closed,
+            config_dir,
+            generation,
+            my_gen,
+        } = ctx;
         #[cfg(feature = "rhai")]
         if my_gen == 1 && vars_need_rhai(vars) {
             meh_rhai_engine::init();
@@ -124,7 +145,6 @@ impl ScriptVarSupervisor {
             vars.len(),
             config_dir.display()
         );
-        let generation = self.generation.clone();
         for def in vars.values() {
             match def {
                 ScriptVarDefinition::Poll(p) => {
@@ -145,13 +165,15 @@ impl ScriptVarSupervisor {
                     tokio::spawn(run_listen(
                         l,
                         tx,
-                        shutdown,
-                        windows_open.clone(),
-                        window_opened.clone(),
-                        window_closed.clone(),
-                        dir,
-                        generation_arc,
-                        my_gen,
+                        SpawnCtx {
+                            shutdown,
+                            windows_open: windows_open.clone(),
+                            window_opened: window_opened.clone(),
+                            window_closed: window_closed.clone(),
+                            config_dir: dir,
+                            generation: generation_arc,
+                            my_gen,
+                        },
                     ));
                 }
                 ScriptVarDefinition::Subscribe(s) => {
@@ -226,14 +248,18 @@ async fn run_poll(
 async fn run_listen(
     def: ListenScriptVar,
     tx: UnboundedSender<VarUpdate>,
-    mut shutdown: tokio::sync::broadcast::Receiver<()>,
-    windows_open: Arc<AtomicBool>,
-    window_opened: Arc<Notify>,
-    window_closed: Arc<Notify>,
-    config_dir: PathBuf,
-    generation: Arc<AtomicUsize>,
-    my_gen: usize,
+    ctx: SpawnCtx,
 ) {
+    let SpawnCtx {
+        mut shutdown,
+        windows_open,
+        window_opened,
+        window_closed,
+        config_dir,
+        generation,
+        my_gen,
+    } = ctx;
+
     use tokio::io::{AsyncBufReadExt, BufReader};
 
     let _ = tx.send((def.name.clone(), def.initial_value.clone()));
@@ -802,7 +828,7 @@ fn vars_need_rhai(vars: &std::collections::HashMap<VarName, ScriptVarDefinition>
 fn run_rhai(cmd: &str, config_dir: &std::path::Path) -> Result<String> {
     #[cfg(feature = "rhai")]
     {
-        let engine = meh_rhai_engine::global().unwrap_or_else(|| meh_rhai_engine::init());
+        let engine = meh_rhai_engine::global().unwrap_or_else(meh_rhai_engine::init);
         let s = cmd.trim();
         if let Some(inline) = s.strip_prefix("rhai:") {
             engine.eval_inline(inline.trim())
