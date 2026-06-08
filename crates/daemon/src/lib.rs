@@ -143,16 +143,16 @@ pub fn run(paths: MehPaths, daemonize: bool) -> Result<()> {
                 );
                 let supervisor = Arc::new(supervisor);
 
-                let ipc = tokio::spawn(run_ipc_server(
-                    socket,
-                    cmd_tx2.clone(),
-                    reload_paths,
-                    reload_config_dir,
-                    windows_open.clone(),
-                    window_opened.clone(),
-                    window_closed.clone(),
-                    supervisor.clone(),
-                ));
+                let ipc_ctx = IpcServerCtx {
+                    cmd_tx: cmd_tx2.clone(),
+                    paths: reload_paths,
+                    config_dir: reload_config_dir,
+                    windows_open: windows_open.clone(),
+                    window_opened: window_opened.clone(),
+                    window_closed: window_closed.clone(),
+                    script_supervisor: supervisor.clone(),
+                };
+                let ipc = tokio::spawn(run_ipc_server(socket, ipc_ctx));
                 let sig = tokio::spawn({
                     let tx = cmd_tx2.clone();
                     async move {
@@ -311,8 +311,8 @@ async fn forward_var_updates(
 
 // ── IPC server ────────────────────────────────────────────────────────────────
 
-async fn run_ipc_server(
-    socket_path: std::path::PathBuf,
+#[derive(Clone)]
+struct IpcServerCtx {
     cmd_tx: UnboundedSender<meh_gtk4::Cmd>,
     paths: MehPaths,
     config_dir: std::path::PathBuf,
@@ -320,7 +320,9 @@ async fn run_ipc_server(
     window_opened: Arc<tokio::sync::Notify>,
     window_closed: Arc<tokio::sync::Notify>,
     script_supervisor: Arc<ScriptVarSupervisor>,
-) -> Result<()> {
+}
+
+async fn run_ipc_server(socket_path: std::path::PathBuf, ctx: IpcServerCtx) -> Result<()> {
     // Remove stale socket
     let _ = tokio::fs::remove_file(&socket_path).await;
 
@@ -331,39 +333,14 @@ async fn run_ipc_server(
         tokio::select! {
             Ok(()) = recv_exit() => break,
             Ok((stream, _)) = listener.accept() => {
-                let tx = cmd_tx.clone();
-                let paths = paths.clone();
-                let config_dir = config_dir.clone();
-                let windows_open = windows_open.clone();
-                let window_opened = window_opened.clone();
-                let window_closed = window_closed.clone();
-                let script_supervisor = script_supervisor.clone();
-                tokio::spawn(handle_connection(
-                    stream,
-                    tx,
-                    paths,
-                    config_dir,
-                    windows_open,
-                    window_opened,
-                    window_closed,
-                    script_supervisor,
-                ));
+                tokio::spawn(handle_connection(stream, ctx.clone()));
             }
         }
     }
     Ok(())
 }
 
-async fn handle_connection(
-    stream: tokio::net::UnixStream,
-    cmd_tx: UnboundedSender<meh_gtk4::Cmd>,
-    paths: MehPaths,
-    config_dir: std::path::PathBuf,
-    windows_open: Arc<AtomicBool>,
-    window_opened: Arc<tokio::sync::Notify>,
-    window_closed: Arc<tokio::sync::Notify>,
-    script_supervisor: Arc<ScriptVarSupervisor>,
-) {
+async fn handle_connection(stream: tokio::net::UnixStream, ctx: IpcServerCtx) {
     let (mut reader, mut writer) = tokio::io::split(stream);
 
     let cmd: IpcCmd = match ipc_read_request(&mut reader).await {
@@ -374,39 +351,20 @@ async fn handle_connection(
         }
     };
 
-    let resp = dispatch_cmd(
-        cmd,
-        &cmd_tx,
-        &paths,
-        &config_dir,
-        windows_open,
-        window_opened,
-        window_closed,
-        script_supervisor,
-    )
-    .await;
+    let resp = dispatch_cmd(cmd, ctx).await;
 
     if let Err(e) = ipc_write_reply(&mut writer, &resp).await {
         tracing::warn!("IPC write error: {}", e);
     }
 }
 
-async fn dispatch_cmd(
-    cmd: IpcCmd,
-    cmd_tx: &UnboundedSender<meh_gtk4::Cmd>,
-    paths: &MehPaths,
-    config_dir: &std::path::Path,
-    windows_open: Arc<AtomicBool>,
-    window_opened: Arc<tokio::sync::Notify>,
-    window_closed: Arc<tokio::sync::Notify>,
-    script_supervisor: Arc<ScriptVarSupervisor>,
-) -> IpcResponse {
+async fn dispatch_cmd(cmd: IpcCmd, ctx: IpcServerCtx) -> IpcResponse {
     match cmd {
         IpcCmd::Ping => IpcResponse::ok("pong"),
 
         IpcCmd::Kill => {
             send_exit();
-            let _ = cmd_tx.send(meh_gtk4::Cmd::Kill);
+            let _ = ctx.cmd_tx.send(meh_gtk4::Cmd::Kill);
             IpcResponse::ok_empty()
         }
 
@@ -416,7 +374,7 @@ async fn dispatch_cmd(
             meh_plugin_host::invalidate_all();
 
             let (resp_tx, resp_rx) = tokio::sync::oneshot::channel();
-            let _ = cmd_tx.send(ipc_to_gtk_cmd(IpcCmd::Reload, resp_tx));
+            let _ = ctx.cmd_tx.send(ipc_to_gtk_cmd(IpcCmd::Reload, resp_tx));
             let resp = match tokio::time::timeout(std::time::Duration::from_secs(5), resp_rx).await {
                 Ok(Ok(r)) => r,
                 Ok(Err(_)) => IpcResponse::err("no response from daemon"),
@@ -424,15 +382,15 @@ async fn dispatch_cmd(
             };
 
             if matches!(resp, IpcResponse::Ok(_))
-                && let Ok(cfg) = MehConfig::load(paths)
+                && let Ok(cfg) = MehConfig::load(&ctx.paths)
             {
-                script_supervisor.restart(
+                ctx.script_supervisor.restart(
                     &cfg.yuck.script_vars,
                     exit_sender().subscribe(),
-                    windows_open,
-                    window_opened,
-                    window_closed,
-                    config_dir.to_path_buf(),
+                    ctx.windows_open,
+                    ctx.window_opened,
+                    ctx.window_closed,
+                    ctx.config_dir,
                 );
             }
             resp
@@ -441,7 +399,7 @@ async fn dispatch_cmd(
         other => {
             let (resp_tx, resp_rx) = tokio::sync::oneshot::channel();
             let gtk_cmd = ipc_to_gtk_cmd(other, resp_tx);
-            let _ = cmd_tx.send(gtk_cmd);
+            let _ = ctx.cmd_tx.send(gtk_cmd);
             match tokio::time::timeout(std::time::Duration::from_secs(5), resp_rx).await {
                 Ok(Ok(r)) => r,
                 Ok(Err(_)) => IpcResponse::err("no response from daemon"),
