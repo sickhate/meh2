@@ -246,7 +246,7 @@ impl RhaiEngine {
 
         let result: Dynamic = self
             .engine
-            .eval_ast_with_scope(&mut scope, &*ast)
+            .eval_ast_with_scope(&mut scope, &ast)
             .map_err(|e| anyhow::anyhow!("rhai `{}`: {}", abs.display(), e))?;
 
         Ok(dynamic_to_string(result))
@@ -292,7 +292,7 @@ impl RhaiEngine {
 
         let result: Dynamic = self
             .engine
-            .call_fn::<Dynamic>(&mut scope, &*ast, fn_name, ())
+            .call_fn::<Dynamic>(&mut scope, &ast, fn_name, ())
             .map_err(|e| anyhow::anyhow!("rhai `{}::{}`: {}", abs.display(), fn_name, e))?;
 
         Ok(dynamic_to_string(result))
@@ -351,7 +351,7 @@ impl RhaiEngine {
 
         let result: Dynamic = self
             .engine
-            .call_fn::<Dynamic>(&mut scope, &*ast, fn_name, ())
+            .call_fn::<Dynamic>(&mut scope, &ast, fn_name, ())
             .map_err(|e| anyhow::anyhow!("rhai `{}::{}`: {}", abs.display(), fn_name, e))?;
 
         dynamic_to_widget_data(result)
